@@ -107,43 +107,6 @@ const BackgroundOrb = ({ color, size, top, left, opacity = 0.3 }: any) => (
   </View>
 );
 
-// Next card preview (shows behind current card)
-const NextCardPreview = ({ item, scale, opacity }: { item: PrayerRequest; scale: Animated.SharedValue<number>; opacity: Animated.SharedValue<number> }) => {
-  const categoryColor = CATEGORIES_COLORS[item.category || "General"] || "#B4B4B4";
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-    opacity: opacity.value,
-  }));
-
-  return (
-    <Animated.View style={[styles.nextCardContainer, animatedStyle]}>
-      <View style={[styles.cardGlow, { backgroundColor: categoryColor }]} />
-      <View style={styles.cardInner}>
-        <View style={styles.cardHeader}>
-          <View style={styles.avatarContainer}>
-            <LinearGradient
-              colors={[categoryColor, categoryColor + "80"]}
-              style={styles.avatar}
-            >
-              <Feather name="eye-off" size={20} color="#1A1A1C" />
-            </LinearGradient>
-          </View>
-          <View style={styles.headerInfo}>
-            <Text style={styles.displayName}>Anonymous</Text>
-            <View style={styles.metaRow}>
-              <View style={[styles.categoryDot, { backgroundColor: categoryColor }]} />
-              <Text style={styles.metaText}>{item.category || "General"}</Text>
-            </View>
-          </View>
-        </View>
-        <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
-        <Text style={styles.cardBody} numberOfLines={2}>{item.body}</Text>
-      </View>
-    </Animated.View>
-  );
-};
-
 // Swipeable Prayer Card
 const SwipeablePrayerCard = ({
   item,
@@ -430,6 +393,7 @@ const EmptyState = ({ onRestart }: { onRestart: () => void }) => {
 export default function PrayScreen() {
   const [cards, setCards] = useState<PrayerRequest[]>(MOCK);
   const [index, setIndex] = useState(0);
+  const [history, setHistory] = useState<number[]>([]);
   const [reactionOpen, setReactionOpen] = useState(false);
   const insets = useSafeAreaInsets();
 
@@ -454,11 +418,22 @@ export default function PrayScreen() {
   }, [index, cards.length]);
 
   const goNext = () => {
+    setHistory((prev) => [...prev, index]);
     setIndex((prev) => Math.min(prev + 1, cards.length));
+  };
+
+  const goBack = () => {
+    if (history.length > 0) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      const prevIndex = history[history.length - 1];
+      setHistory((prev) => prev.slice(0, -1));
+      setIndex(prevIndex);
+    }
   };
 
   const restart = () => {
     setIndex(0);
+    setHistory([]);
     setCards([...MOCK]);
   };
 
@@ -496,6 +471,15 @@ export default function PrayScreen() {
         </View>
 
         <View style={styles.headerRight}>
+          {history.length > 0 && (
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={goBack}
+              activeOpacity={0.7}
+            >
+              <Feather name="rotate-ccw" size={18} color="rgba(255,255,255,0.5)" />
+            </TouchableOpacity>
+          )}
           <View style={styles.counterPill}>
             <Feather name="layers" size={14} color="rgba(255,255,255,0.5)" />
             <Text style={styles.counterText}>{countText}</Text>
@@ -634,6 +618,16 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontVariant: ["tabular-nums"],
   },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
 
   // Swipe Instructions
   swipeInstructions: {
@@ -658,19 +652,6 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 20,
     justifyContent: "center",
-  },
-
-  // Card Stack
-  cardStack: {
-    position: "relative",
-  },
-
-  // Next Card Preview
-  nextCardContainer: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
   },
 
   // Card
