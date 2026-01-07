@@ -1,4 +1,4 @@
-// app/(tabs)/home.tsx
+// app/(tabs)/pray.tsx
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
@@ -12,11 +12,14 @@ import {
   Platform,
   ScrollView,
   Keyboard,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
+import * as Haptics from 'expo-haptics';
+import { supabase } from '@/supabaseConfig';
 
 const { width, height } = Dimensions.get('window');
 
@@ -48,6 +51,7 @@ export default function HomeScreen() {
   const [title, setTitle] = useState('');
   const [prayer, setPrayer] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const insets = useSafeAreaInsets();
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -69,10 +73,48 @@ export default function HomeScreen() {
     ]).start();
   }, []);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     Keyboard.dismiss();
-    // TODO: Submit prayer to Supabase
-    console.log({ title, prayer, selectedCategory });
+    if (!isFormValid || isSubmitting) return;
+
+    setIsSubmitting(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    try {
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        Alert.alert('Error', 'You must be logged in to submit a prayer.');
+        return;
+      }
+
+      // Insert prayer
+      const { error } = await supabase.from('prayers').insert({
+        user_id: user.id,
+        title: title.trim(),
+        body: prayer.trim(),
+        category: selectedCategory,
+      });
+
+      if (error) throw error;
+
+      // Success - clear form
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert(
+        'Prayer Shared',
+        'Your prayer has been shared anonymously. Others will be praying for you.',
+        [{ text: 'OK' }]
+      );
+      setTitle('');
+      setPrayer('');
+      setSelectedCategory(null);
+    } catch (error: any) {
+      console.error('Error submitting prayer:', error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Error', error.message || 'Failed to submit prayer. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const isFormValid = title.trim().length > 0 && prayer.trim().length > 0 && selectedCategory;
@@ -213,28 +255,36 @@ export default function HomeScreen() {
 
             {/* Submit Button */}
             <TouchableOpacity
-              style={[styles.submitButton, !isFormValid && styles.submitButtonDisabled]}
+              style={[styles.submitButton, (!isFormValid || isSubmitting) && styles.submitButtonDisabled]}
               onPress={handleSubmit}
               activeOpacity={0.9}
-              disabled={!isFormValid}
+              disabled={!isFormValid || isSubmitting}
             >
               <LinearGradient
-                colors={isFormValid ? ['#C4A574', '#B89660'] : ['#3A3A3C', '#2C2C2E']}
+                colors={isFormValid && !isSubmitting ? ['#C4A574', '#B89660'] : ['#3A3A3C', '#2C2C2E']}
                 style={styles.submitGradient}
               >
-                <Feather
-                  name="send"
-                  size={18}
-                  color={isFormValid ? '#0D0D0F' : 'rgba(255,255,255,0.3)'}
-                />
-                <Text
-                  style={[
-                    styles.submitText,
-                    !isFormValid && styles.submitTextDisabled,
-                  ]}
-                >
-                  Share Prayer
-                </Text>
+                {isSubmitting ? (
+                  <Text style={[styles.submitText, !isFormValid && styles.submitTextDisabled]}>
+                    Sharing...
+                  </Text>
+                ) : (
+                  <>
+                    <Feather
+                      name="send"
+                      size={18}
+                      color={isFormValid ? '#0D0D0F' : 'rgba(255,255,255,0.3)'}
+                    />
+                    <Text
+                      style={[
+                        styles.submitText,
+                        !isFormValid && styles.submitTextDisabled,
+                      ]}
+                    >
+                      Share Prayer
+                    </Text>
+                  </>
+                )}
               </LinearGradient>
             </TouchableOpacity>
           </Animated.View>

@@ -1,5 +1,5 @@
-// app/(tabs)/pray.tsx
-import React, { useMemo, useState, useEffect } from "react";
+// app/(tabs)/home.tsx
+import React, { useMemo, useState, useEffect, useCallback } from "react";
 import {
   Modal,
   Pressable,
@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   View,
   Dimensions,
+  ActivityIndicator,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Feather } from "@expo/vector-icons";
@@ -24,6 +25,7 @@ import Animated, {
   Extrapolation,
 } from "react-native-reanimated";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
+import { supabase } from "@/supabaseConfig";
 
 const { width, height } = Dimensions.get("window");
 const SWIPE_THRESHOLD = width * 0.25;
@@ -32,8 +34,8 @@ type PrayerRequest = {
   id: string;
   title: string;
   body: string;
-  category?: string;
-  createdAt: string;
+  category: string;
+  created_at: string;
 };
 
 const PRESET_REACTIONS = [
@@ -66,31 +68,6 @@ function timeAgo(iso: string) {
   const days = Math.floor(hrs / 24);
   return `${days}d ago`;
 }
-
-// Mock feed - anonymous prayers
-const MOCK: PrayerRequest[] = [
-  {
-    id: "1",
-    category: "Work",
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(),
-    title: "Anxiety + job interview",
-    body: "I'm interviewing Friday. Prayers for calm, clarity, and the right doors to open.",
-  },
-  {
-    id: "2",
-    category: "Relationships",
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 26).toISOString(),
-    title: "Friendship healing",
-    body: "I want to reconcile with a close friend. Pray for humility, courage, and wise words.",
-  },
-  {
-    id: "3",
-    category: "Family",
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 50).toISOString(),
-    title: "Family peace",
-    body: "Please pray for unity and patience in our home this week.",
-  },
-];
 
 // Decorative background orb
 const BackgroundOrb = ({ color, size, top, left, opacity = 0.3 }: any) => (
@@ -289,7 +266,7 @@ const SwipeablePrayerCard = ({
                 <View style={[styles.categoryDot, { backgroundColor: categoryColor }]} />
                 <Text style={styles.metaText}>{item.category || "General"}</Text>
                 <Text style={styles.metaDivider}>·</Text>
-                <Text style={styles.metaText}>{timeAgo(item.createdAt)}</Text>
+                <Text style={styles.metaText}>{timeAgo(item.created_at)}</Text>
               </View>
             </View>
           </View>
@@ -391,14 +368,66 @@ const EmptyState = ({ onRestart }: { onRestart: () => void }) => {
 };
 
 export default function PrayScreen() {
-  const [cards, setCards] = useState<PrayerRequest[]>(MOCK);
+  const [cards, setCards] = useState<PrayerRequest[]>([]);
   const [index, setIndex] = useState(0);
   const [history, setHistory] = useState<number[]>([]);
   const [reactionOpen, setReactionOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
 
   const headerOpacity = useSharedValue(0);
   const headerTranslateY = useSharedValue(-20);
+
+  // Fetch prayers from Supabase
+  const fetchPrayers = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setCurrentUserId(user.id);
+      }
+
+      // Fetch prayers excluding ones user has already interacted with
+      const { data: interactedPrayers } = await supabase
+        .from('prayer_interactions')
+        .select('prayer_id')
+        .eq('user_id', user?.id);
+
+      const interactedIds = interactedPrayers?.map(p => p.prayer_id) || [];
+
+      let query = supabase
+        .from('prayers')
+        .select('id, title, body, category, created_at')
+        .order('created_at', { ascending: false });
+
+      // Exclude already interacted prayers
+      if (interactedIds.length > 0) {
+        query = query.not('id', 'in', `(${interactedIds.join(',')})`);
+      }
+
+      // Exclude user's own prayers
+      if (user) {
+        query = query.neq('user_id', user.id);
+      }
+
+      const { data, error } = await query.limit(50);
+
+      if (error) throw error;
+      setCards(data || []);
+      setIndex(0);
+      setHistory([]);
+    } catch (error) {
+      console.error('Error fetching prayers:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPrayers();
+  }, [fetchPrayers]);
 
   useEffect(() => {
     headerOpacity.value = withTiming(1, { duration: 600 });
@@ -417,7 +446,27 @@ export default function PrayScreen() {
     return `${Math.min(index + 1, cards.length)} / ${cards.length}`;
   }, [index, cards.length]);
 
-  const goNext = () => {
+  // Record interaction to Supabase
+  const recordInteraction = async (prayerId: string, action: string) => {
+    if (!currentUserId) return;
+    
+    try {
+      await supabase.from('prayer_interactions').upsert({
+        prayer_id: prayerId,
+        user_id: currentUserId,
+        action: action,
+      }, {
+        onConflict: 'prayer_id,user_id,action'
+      });
+    } catch (error) {
+      console.error('Error recording interaction:', error);
+    }
+  };
+
+  const goNext = (action: 'prayed' | 'skipped' = 'skipped') => {
+    if (current) {
+      recordInteraction(current.id, action);
+    }
     setHistory((prev) => [...prev, index]);
     setIndex((prev) => Math.min(prev + 1, cards.length));
   };
@@ -432,15 +481,17 @@ export default function PrayScreen() {
   };
 
   const restart = () => {
-    setIndex(0);
-    setHistory([]);
-    setCards([...MOCK]);
+    fetchPrayers();
   };
 
-  const chooseReaction = (key: string) => {
+  const chooseReaction = async (key: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (current) {
+      await recordInteraction(current.id, key);
+    }
     setReactionOpen(false);
-    // TODO: Save reaction to Supabase
+    // Auto-advance to next prayer after sending encouragement
+    goNext('prayed');
   };
 
   return (
@@ -501,14 +552,19 @@ export default function PrayScreen() {
 
       {/* Main Content */}
       <View style={styles.content}>
-        {!current ? (
+        {isLoading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#C4A574" />
+            <Text style={styles.loadingText}>Loading prayers...</Text>
+          </View>
+        ) : !current ? (
           <EmptyState onRestart={restart} />
         ) : (
           <SwipeablePrayerCard
             key={current.id}
             item={current}
-            onPray={goNext}
-            onSkip={goNext}
+            onPray={() => goNext('prayed')}
+            onSkip={() => goNext('skipped')}
             onReact={() => setReactionOpen(true)}
           />
         )}
@@ -652,6 +708,16 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 20,
     justifyContent: "center",
+  },
+  loadingContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 16,
+  },
+  loadingText: {
+    color: "rgba(255,255,255,0.5)",
+    fontSize: 14,
+    fontWeight: "500",
   },
 
   // Card
