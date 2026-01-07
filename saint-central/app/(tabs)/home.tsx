@@ -1,5 +1,5 @@
-// app/(tabs)/explore.tsx
-import React, { useMemo, useState, useRef, useEffect } from "react";
+// app/(tabs)/pray.tsx
+import React, { useMemo, useState, useEffect } from "react";
 import {
   Modal,
   Pressable,
@@ -7,17 +7,26 @@ import {
   Text,
   TouchableOpacity,
   View,
-  Alert,
-  Animated,
   Dimensions,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Defs, RadialGradient, Stop } from "react-native-svg";
-import { authHelpers } from "@/supabaseConfig";
+import * as Haptics from "expo-haptics";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  runOnJS,
+  interpolate,
+  Extrapolation,
+} from "react-native-reanimated";
+import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 
 const { width, height } = Dimensions.get("window");
+const SWIPE_THRESHOLD = width * 0.25;
 
 type PrayerRequest = {
   id: string;
@@ -25,23 +34,24 @@ type PrayerRequest = {
   body: string;
   category?: string;
   createdAt: string;
-  displayName?: string;
 };
 
 const PRESET_REACTIONS = [
   { key: "amen", label: "Amen", icon: "heart" },
-  { key: "praying", label: "Praying", icon: "sun" },
+  { key: "praying", label: "Praying", icon: "sunrise" },
   { key: "peace", label: "Peace", icon: "feather" },
   { key: "strength", label: "Strength", icon: "shield" },
-  { key: "healing", label: "Healing", icon: "heart" },
+  { key: "healing", label: "Healing", icon: "activity" },
   { key: "guidance", label: "Guidance", icon: "compass" },
 ];
 
 const CATEGORIES_COLORS: Record<string, string> = {
+  Personal: "#C4A574",
   Work: "#C4A574",
   Relationships: "#A5B4A5",
   Family: "#B4A5C4",
   Health: "#A5C4B4",
+  Other: "#B4B4B4",
   General: "#B4B4B4",
 };
 
@@ -50,18 +60,17 @@ function timeAgo(iso: string) {
   const now = Date.now();
   const diff = Math.max(0, now - t);
   const mins = Math.floor(diff / 60000);
-  if (mins < 60) return `${mins}m`;
+  if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h`;
+  if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
-  return `${days}d`;
+  return `${days}d ago`;
 }
 
-// Mock feed
+// Mock feed - anonymous prayers
 const MOCK: PrayerRequest[] = [
   {
     id: "1",
-    displayName: "David",
     category: "Work",
     createdAt: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(),
     title: "Anxiety + job interview",
@@ -69,7 +78,6 @@ const MOCK: PrayerRequest[] = [
   },
   {
     id: "2",
-    displayName: "Sophia",
     category: "Relationships",
     createdAt: new Date(Date.now() - 1000 * 60 * 60 * 26).toISOString(),
     title: "Friendship healing",
@@ -77,7 +85,6 @@ const MOCK: PrayerRequest[] = [
   },
   {
     id: "3",
-    displayName: "Anonymous",
     category: "Family",
     createdAt: new Date(Date.now() - 1000 * 60 * 60 * 50).toISOString(),
     title: "Family peace",
@@ -100,149 +107,307 @@ const BackgroundOrb = ({ color, size, top, left, opacity = 0.3 }: any) => (
   </View>
 );
 
-// Animated card component
-const PrayerCard = ({ 
-  item, 
-  onPray, 
-  onNext, 
-  onReact 
-}: { 
-  item: PrayerRequest; 
-  onPray: () => void; 
-  onNext: () => void;
-  onReact: () => void;
-}) => {
-  const scaleAnim = useRef(new Animated.Value(0.95)).current;
-  const opacityAnim = useRef(new Animated.Value(0)).current;
-  
+// Next card preview (shows behind current card)
+const NextCardPreview = ({ item, scale, opacity }: { item: PrayerRequest; scale: Animated.SharedValue<number>; opacity: Animated.SharedValue<number> }) => {
   const categoryColor = CATEGORIES_COLORS[item.category || "General"] || "#B4B4B4";
 
-  useEffect(() => {
-    Animated.parallel([
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        tension: 50,
-        friction: 8,
-        useNativeDriver: true,
-      }),
-      Animated.timing(opacityAnim, {
-        toValue: 1,
-        duration: 400,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [item.id]);
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    opacity: opacity.value,
+  }));
 
   return (
-    <Animated.View
-      style={[
-        styles.card,
-        {
-          opacity: opacityAnim,
-          transform: [{ scale: scaleAnim }],
-        },
-      ]}
-    >
-      {/* Card glow effect */}
+    <Animated.View style={[styles.nextCardContainer, animatedStyle]}>
       <View style={[styles.cardGlow, { backgroundColor: categoryColor }]} />
-      
-      {/* Card content */}
       <View style={styles.cardInner}>
-        {/* Header */}
         <View style={styles.cardHeader}>
           <View style={styles.avatarContainer}>
             <LinearGradient
               colors={[categoryColor, categoryColor + "80"]}
               style={styles.avatar}
             >
-              <Text style={styles.avatarText}>
-                {(item.displayName?.trim() || "A").slice(0, 1).toUpperCase()}
-              </Text>
+              <Feather name="eye-off" size={20} color="#1A1A1C" />
             </LinearGradient>
-            <View style={[styles.avatarRing, { borderColor: categoryColor + "40" }]} />
           </View>
-          
           <View style={styles.headerInfo}>
-            <Text style={styles.displayName}>
-              {item.displayName?.trim() || "Anonymous"}
-            </Text>
+            <Text style={styles.displayName}>Anonymous</Text>
             <View style={styles.metaRow}>
               <View style={[styles.categoryDot, { backgroundColor: categoryColor }]} />
               <Text style={styles.metaText}>{item.category || "General"}</Text>
-              <Text style={styles.metaDivider}>·</Text>
-              <Text style={styles.metaText}>{timeAgo(item.createdAt)}</Text>
             </View>
           </View>
         </View>
-
-        {/* Title */}
-        <Text style={styles.cardTitle}>{item.title}</Text>
-        
-        {/* Body */}
-        <Text style={styles.cardBody}>{item.body}</Text>
-
-        {/* Divider */}
-        <View style={styles.divider}>
-          <View style={styles.dividerLine} />
-          <Feather name="sun" size={14} color="rgba(255,255,255,0.2)" />
-          <View style={styles.dividerLine} />
-        </View>
-
-        {/* Quick Prayer */}
-        <View style={styles.quickPrayer}>
-          <Text style={styles.quickPrayerLabel}>A prayer for them</Text>
-          <Text style={styles.quickPrayerText}>
-            "Lord, be near to {item.displayName || "them"}. Grant peace, strength, and Your guiding light. Amen."
-          </Text>
-        </View>
-
-        {/* Actions */}
-        <View style={styles.cardActions}>
-          <TouchableOpacity 
-            style={styles.actionButton} 
-            onPress={onNext}
-            activeOpacity={0.8}
-          >
-            <Feather name="chevron-right" size={20} color="rgba(255,255,255,0.6)" />
-            <Text style={styles.actionButtonText}>Next</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.actionButtonCenter}
-            onPress={onReact}
-            activeOpacity={0.8}
-          >
-            <Feather name="heart" size={18} color="rgba(255,255,255,0.7)" />
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={[styles.actionButtonPrimary, { backgroundColor: categoryColor }]}
-            onPress={onPray}
-            activeOpacity={0.9}
-          >
-            <Feather name="sun" size={18} color="#1A1A1C" />
-            <Text style={styles.actionButtonPrimaryText}>I Prayed</Text>
-          </TouchableOpacity>
-        </View>
+        <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
+        <Text style={styles.cardBody} numberOfLines={2}>{item.body}</Text>
       </View>
     </Animated.View>
   );
 };
 
-// Empty state component
-const EmptyState = ({ onRestart }: { onRestart: () => void }) => {
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  
+// Swipeable Prayer Card
+const SwipeablePrayerCard = ({
+  item,
+  onPray,
+  onSkip,
+  onReact,
+}: {
+  item: PrayerRequest;
+  onPray: () => void;
+  onSkip: () => void;
+  onReact: () => void;
+}) => {
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const cardOpacity = useSharedValue(0);
+  const cardScale = useSharedValue(0.95);
+
+  const categoryColor = CATEGORIES_COLORS[item.category || "General"] || "#B4B4B4";
+
+  // Animate in on mount
   useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 600,
-      useNativeDriver: true,
-    }).start();
-  }, []);
+    translateX.value = 0;
+    translateY.value = 0;
+    cardScale.value = 0.95;
+    cardOpacity.value = 0;
+    
+    // Smooth fade and scale in
+    cardScale.value = withSpring(1, { damping: 18, stiffness: 180 });
+    cardOpacity.value = withTiming(1, { duration: 300 });
+  }, [item.id]);
+
+  const triggerHaptic = (type: "light" | "medium") => {
+    if (type === "light") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } else {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+  };
+
+  const handleSwipeComplete = (direction: "left" | "right") => {
+    if (direction === "right") {
+      triggerHaptic("medium");
+      onPray();
+    } else {
+      triggerHaptic("light");
+      onSkip();
+    }
+  };
+
+  const panGesture = Gesture.Pan()
+    .onUpdate((event) => {
+      translateX.value = event.translationX;
+      translateY.value = event.translationY * 0.15;
+    })
+    .onEnd((event) => {
+      const shouldSwipeRight = translateX.value > SWIPE_THRESHOLD;
+      const shouldSwipeLeft = translateX.value < -SWIPE_THRESHOLD;
+
+      if (shouldSwipeRight) {
+        translateX.value = withTiming(width * 1.2, { duration: 280 });
+        translateY.value = withTiming(translateY.value * 1.5, { duration: 280 });
+        cardOpacity.value = withTiming(0, { duration: 250 });
+        runOnJS(handleSwipeComplete)("right");
+      } else if (shouldSwipeLeft) {
+        translateX.value = withTiming(-width * 1.2, { duration: 280 });
+        translateY.value = withTiming(translateY.value * 1.5, { duration: 280 });
+        cardOpacity.value = withTiming(0, { duration: 250 });
+        runOnJS(handleSwipeComplete)("left");
+      } else {
+        // Snap back smoothly
+        translateX.value = withSpring(0, { damping: 18, stiffness: 180 });
+        translateY.value = withSpring(0, { damping: 18, stiffness: 180 });
+      }
+    });
+
+  const cardAnimatedStyle = useAnimatedStyle(() => {
+    const rotate = interpolate(
+      translateX.value,
+      [-width / 2, 0, width / 2],
+      [-12, 0, 12],
+      Extrapolation.CLAMP
+    );
+
+    return {
+      transform: [
+        { translateX: translateX.value },
+        { translateY: translateY.value },
+        { rotate: `${rotate}deg` },
+        { scale: cardScale.value },
+      ],
+      opacity: cardOpacity.value,
+    };
+  });
+
+  const prayIndicatorStyle = useAnimatedStyle(() => {
+    const opacity = interpolate(
+      translateX.value,
+      [0, SWIPE_THRESHOLD],
+      [0, 1],
+      Extrapolation.CLAMP
+    );
+    const scale = interpolate(
+      translateX.value,
+      [0, SWIPE_THRESHOLD],
+      [0.8, 1],
+      Extrapolation.CLAMP
+    );
+    return { opacity, transform: [{ scale }] };
+  });
+
+  const skipIndicatorStyle = useAnimatedStyle(() => {
+    const opacity = interpolate(
+      translateX.value,
+      [-SWIPE_THRESHOLD, 0],
+      [1, 0],
+      Extrapolation.CLAMP
+    );
+    const scale = interpolate(
+      translateX.value,
+      [-SWIPE_THRESHOLD, 0],
+      [1, 0.8],
+      Extrapolation.CLAMP
+    );
+    return { opacity, transform: [{ scale }] };
+  });
+
+  const handlePrayPress = () => {
+    triggerHaptic("medium");
+    translateX.value = withTiming(width * 1.2, { duration: 300 });
+    cardOpacity.value = withTiming(0, { duration: 280 });
+    setTimeout(() => onPray(), 300);
+  };
+
+  const handleSkipPress = () => {
+    triggerHaptic("light");
+    translateX.value = withTiming(-width * 1.2, { duration: 300 });
+    cardOpacity.value = withTiming(0, { duration: 280 });
+    setTimeout(() => onSkip(), 300);
+  };
+
+  const handleReactPress = () => {
+    triggerHaptic("light");
+    onReact();
+  };
 
   return (
-    <Animated.View style={[styles.emptyState, { opacity: fadeAnim }]}>
+    <GestureDetector gesture={panGesture}>
+      <Animated.View style={[styles.card, cardAnimatedStyle]}>
+        {/* Swipe Indicators */}
+        <Animated.View style={[styles.swipeIndicator, styles.prayIndicator, prayIndicatorStyle]}>
+          <Feather name="sunrise" size={24} color="#C4A574" />
+          <Text style={styles.swipeIndicatorText}>PRAYED</Text>
+        </Animated.View>
+
+        <Animated.View style={[styles.swipeIndicator, styles.skipIndicator, skipIndicatorStyle]}>
+          <Feather name="x" size={24} color="rgba(255,255,255,0.6)" />
+          <Text style={[styles.swipeIndicatorText, { color: "rgba(255,255,255,0.6)" }]}>SKIP</Text>
+        </Animated.View>
+
+        {/* Card glow effect */}
+        <View style={[styles.cardGlow, { backgroundColor: categoryColor }]} />
+
+        {/* Card content */}
+        <View style={styles.cardInner}>
+          {/* Header - Anonymous */}
+          <View style={styles.cardHeader}>
+            <View style={styles.avatarContainer}>
+              <LinearGradient
+                colors={[categoryColor, categoryColor + "80"]}
+                style={styles.avatar}
+              >
+                <Feather name="eye-off" size={20} color="#1A1A1C" />
+              </LinearGradient>
+              <View style={[styles.avatarRing, { borderColor: categoryColor + "40" }]} />
+            </View>
+
+            <View style={styles.headerInfo}>
+              <Text style={styles.displayName}>Anonymous</Text>
+              <View style={styles.metaRow}>
+                <View style={[styles.categoryDot, { backgroundColor: categoryColor }]} />
+                <Text style={styles.metaText}>{item.category || "General"}</Text>
+                <Text style={styles.metaDivider}>·</Text>
+                <Text style={styles.metaText}>{timeAgo(item.createdAt)}</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Title */}
+          <Text style={styles.cardTitle}>{item.title}</Text>
+
+          {/* Body */}
+          <Text style={styles.cardBody}>{item.body}</Text>
+
+          {/* Divider */}
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Feather name="sunrise" size={14} color="rgba(255,255,255,0.2)" />
+            <View style={styles.dividerLine} />
+          </View>
+
+          {/* Quick Prayer */}
+          <View style={styles.quickPrayer}>
+            <Text style={styles.quickPrayerLabel}>A prayer for them</Text>
+            <Text style={styles.quickPrayerText}>
+              "Lord, be near to this person. Grant them peace, strength, and Your guiding light. Amen."
+            </Text>
+          </View>
+
+          {/* Actions */}
+          <View style={styles.cardActions}>
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={handleSkipPress}
+              activeOpacity={0.7}
+            >
+              <Feather name="x" size={20} color="rgba(255,255,255,0.6)" />
+              <Text style={styles.actionButtonText}>Skip</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.actionButtonCenter}
+              onPress={handleReactPress}
+              activeOpacity={0.7}
+            >
+              <Feather name="heart" size={18} color="rgba(255,255,255,0.7)" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.actionButtonPrimary, { backgroundColor: categoryColor }]}
+              onPress={handlePrayPress}
+              activeOpacity={0.8}
+            >
+              <Feather name="sunrise" size={18} color="#1A1A1C" />
+              <Text style={styles.actionButtonPrimaryText}>I Prayed</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Animated.View>
+    </GestureDetector>
+  );
+};
+
+// Empty state component
+const EmptyState = ({ onRestart }: { onRestart: () => void }) => {
+  const opacity = useSharedValue(0);
+  const scale = useSharedValue(0.9);
+
+  useEffect(() => {
+    opacity.value = withTiming(1, { duration: 400 });
+    scale.value = withSpring(1, { damping: 15, stiffness: 150 });
+  }, []);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ scale: scale.value }],
+  }));
+
+  const handleRestart = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onRestart();
+  };
+
+  return (
+    <Animated.View style={[styles.emptyState, animatedStyle]}>
       <View style={styles.emptyIconContainer}>
         <Feather name="check-circle" size={48} color="rgba(255,255,255,0.3)" />
       </View>
@@ -250,9 +415,9 @@ const EmptyState = ({ onRestart }: { onRestart: () => void }) => {
       <Text style={styles.emptySubtitle}>
         You've prayed through all requests.{"\n"}Check back later for more.
       </Text>
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.emptyButton}
-        onPress={onRestart}
+        onPress={handleRestart}
         activeOpacity={0.8}
       >
         <Feather name="refresh-cw" size={16} color="rgba(255,255,255,0.8)" />
@@ -262,31 +427,24 @@ const EmptyState = ({ onRestart }: { onRestart: () => void }) => {
   );
 };
 
-export default function ExplorePrayerDeck() {
+export default function PrayScreen() {
   const [cards, setCards] = useState<PrayerRequest[]>(MOCK);
   const [index, setIndex] = useState(0);
   const [reactionOpen, setReactionOpen] = useState(false);
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const insets = useSafeAreaInsets();
-  
-  const headerFade = useRef(new Animated.Value(0)).current;
-  const headerSlide = useRef(new Animated.Value(-20)).current;
+
+  const headerOpacity = useSharedValue(0);
+  const headerTranslateY = useSharedValue(-20);
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(headerFade, {
-        toValue: 1,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-      Animated.spring(headerSlide, {
-        toValue: 0,
-        tension: 50,
-        friction: 10,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    headerOpacity.value = withTiming(1, { duration: 600 });
+    headerTranslateY.value = withSpring(0, { damping: 15, stiffness: 100 });
   }, []);
+
+  const headerAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: headerOpacity.value,
+    transform: [{ translateY: headerTranslateY.value }],
+  }));
 
   const current = cards[index] ?? null;
 
@@ -296,133 +454,99 @@ export default function ExplorePrayerDeck() {
   }, [index, cards.length]);
 
   const goNext = () => {
-    if (!current) return;
-    setIndex((prev) => Math.min(prev + 1, cards.length));
-  };
-
-  const pray = () => {
-    if (!current) return;
     setIndex((prev) => Math.min(prev + 1, cards.length));
   };
 
   const restart = () => {
     setIndex(0);
-    setCards(MOCK);
+    setCards([...MOCK]);
   };
 
   const chooseReaction = (key: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setReactionOpen(false);
-  };
-
-  const handleLogout = () => {
-    Alert.alert(
-      "Sign Out",
-      "Are you sure you want to sign out?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Sign Out",
-          style: "destructive",
-          onPress: async () => {
-            setIsLoggingOut(true);
-            try {
-              await authHelpers.signOut();
-            } catch (error) {
-              console.error("Logout error:", error);
-              Alert.alert("Error", "Failed to sign out. Please try again.");
-            } finally {
-              setIsLoggingOut(false);
-            }
-          },
-        },
-      ]
-    );
+    // TODO: Save reaction to Supabase
   };
 
   return (
-    <View style={styles.container}>
+    <GestureHandlerRootView style={styles.container}>
       {/* Background */}
       <LinearGradient
         colors={["#0D0D0F", "#1A1A1C", "#0D0D0F"]}
         locations={[0, 0.5, 1]}
         style={StyleSheet.absoluteFillObject}
       />
-      
+
       {/* Decorative orbs */}
       <BackgroundOrb color="#C4A574" size={300} top={-50} left={-100} opacity={0.15} />
       <BackgroundOrb color="#A5B4A5" size={250} top={height * 0.4} left={width - 80} opacity={0.1} />
       <BackgroundOrb color="#B4A5C4" size={200} top={height * 0.7} left={-50} opacity={0.12} />
 
       {/* Header */}
-      <Animated.View 
+      <Animated.View
         style={[
-          styles.header, 
-          { 
-            paddingTop: insets.top + 12,
-            opacity: headerFade,
-            transform: [{ translateY: headerSlide }],
-          }
+          styles.header,
+          { paddingTop: insets.top + 12 },
+          headerAnimatedStyle,
         ]}
       >
         <View style={styles.headerLeft}>
           <Text style={styles.headerTitle}>Prayer Wall</Text>
           <Text style={styles.headerSubtitle}>Lift others in prayer</Text>
         </View>
-        
+
         <View style={styles.headerRight}>
           <View style={styles.counterPill}>
             <Feather name="layers" size={14} color="rgba(255,255,255,0.5)" />
             <Text style={styles.counterText}>{countText}</Text>
           </View>
-          
-          <TouchableOpacity
-            style={styles.logoutButton}
-            onPress={handleLogout}
-            activeOpacity={0.7}
-            disabled={isLoggingOut}
-          >
-            <Feather 
-              name="log-out" 
-              size={18} 
-              color={isLoggingOut ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.5)"} 
-            />
-          </TouchableOpacity>
         </View>
       </Animated.View>
+
+      {/* Swipe Instructions */}
+      <View style={styles.swipeInstructions}>
+        <View style={styles.instructionItem}>
+          <Feather name="chevron-left" size={14} color="rgba(255,255,255,0.3)" />
+          <Text style={styles.instructionText}>Skip</Text>
+        </View>
+        <View style={styles.instructionItem}>
+          <Text style={[styles.instructionText, { color: "rgba(196, 165, 116, 0.6)" }]}>Prayed</Text>
+          <Feather name="chevron-right" size={14} color="rgba(196, 165, 116, 0.6)" />
+        </View>
+      </View>
 
       {/* Main Content */}
       <View style={styles.content}>
         {!current ? (
           <EmptyState onRestart={restart} />
         ) : (
-          <PrayerCard
+          <SwipeablePrayerCard
             key={current.id}
             item={current}
-            onPray={pray}
-            onNext={goNext}
+            onPray={goNext}
+            onSkip={goNext}
             onReact={() => setReactionOpen(true)}
           />
         )}
       </View>
 
-      {/* Bottom hint */}
-      <Animated.View style={[styles.bottomHint, { paddingBottom: insets.bottom + 16, opacity: headerFade }]}>
-        <View style={styles.hintLine} />
-        <Text style={styles.hintText}>Swipe or tap to navigate</Text>
-        <View style={styles.hintLine} />
+      {/* Anonymous Badge */}
+      <Animated.View style={[styles.anonymousBadge, { paddingBottom: insets.bottom + 16 }, headerAnimatedStyle]}>
+        <Feather name="eye-off" size={12} color="rgba(196, 165, 116, 0.6)" />
+        <Text style={styles.anonymousBadgeText}>All prayers are 100% anonymous</Text>
       </Animated.View>
 
       {/* Reactions Modal */}
-      <Modal 
-        visible={reactionOpen} 
-        transparent 
-        animationType="fade" 
+      <Modal
+        visible={reactionOpen}
+        transparent
+        animationType="fade"
         onRequestClose={() => setReactionOpen(false)}
       >
         <Pressable style={styles.modalBackdrop} onPress={() => setReactionOpen(false)}>
           <Pressable style={styles.modalContent} onPress={() => {}}>
             <View style={styles.modalHandle} />
-            
+
             <Text style={styles.modalTitle}>Send Encouragement</Text>
             <Text style={styles.modalSubtitle}>Let them know you're praying</Text>
 
@@ -432,16 +556,18 @@ export default function ExplorePrayerDeck() {
                   key={r.key}
                   onPress={() => chooseReaction(r.key)}
                   style={styles.reactionButton}
-                  activeOpacity={0.8}
+                  activeOpacity={0.7}
                 >
-                  <Feather name={r.icon as any} size={20} color="rgba(255,255,255,0.8)" />
+                  <View style={styles.reactionIconContainer}>
+                    <Feather name={r.icon as any} size={24} color="#C4A574" />
+                  </View>
                   <Text style={styles.reactionLabel}>{r.label}</Text>
                 </TouchableOpacity>
               ))}
             </View>
 
-            <TouchableOpacity 
-              onPress={() => setReactionOpen(false)} 
+            <TouchableOpacity
+              onPress={() => setReactionOpen(false)}
               style={styles.modalCloseButton}
               activeOpacity={0.8}
             >
@@ -450,7 +576,7 @@ export default function ExplorePrayerDeck() {
           </Pressable>
         </Pressable>
       </Modal>
-    </View>
+    </GestureHandlerRootView>
   );
 }
 
@@ -463,14 +589,14 @@ const styles = StyleSheet.create({
     position: "absolute",
     pointerEvents: "none",
   },
-  
+
   // Header
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
     paddingHorizontal: 24,
-    paddingBottom: 16,
+    paddingBottom: 8,
   },
   headerLeft: {},
   headerTitle: {
@@ -508,15 +634,23 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontVariant: ["tabular-nums"],
   },
-  logoutButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(255,255,255,0.06)",
+
+  // Swipe Instructions
+  swipeInstructions: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 32,
+    paddingVertical: 8,
+  },
+  instructionItem: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    gap: 4,
+  },
+  instructionText: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.3)",
+    fontWeight: "500",
   },
 
   // Content
@@ -524,6 +658,19 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 20,
     justifyContent: "center",
+  },
+
+  // Card Stack
+  cardStack: {
+    position: "relative",
+  },
+
+  // Next Card Preview
+  nextCardContainer: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
   },
 
   // Card
@@ -546,6 +693,37 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.08)",
     padding: 24,
   },
+
+  // Swipe Indicators
+  swipeIndicator: {
+    position: "absolute",
+    top: 24,
+    zIndex: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: 2,
+  },
+  prayIndicator: {
+    right: 24,
+    backgroundColor: "rgba(196, 165, 116, 0.15)",
+    borderColor: "#C4A574",
+  },
+  skipIndicator: {
+    left: 24,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderColor: "rgba(255,255,255,0.3)",
+  },
+  swipeIndicatorText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#C4A574",
+    letterSpacing: 1,
+  },
+
   cardHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -570,11 +748,6 @@ const styles = StyleSheet.create({
     bottom: -3,
     borderRadius: 27,
     borderWidth: 1,
-  },
-  avatarText: {
-    color: "#1A1A1C",
-    fontSize: 20,
-    fontWeight: "700",
   },
   headerInfo: {
     flex: 1,
@@ -743,22 +916,16 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  // Bottom Hint
-  bottomHint: {
+  // Anonymous Badge
+  anonymousBadge: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 12,
+    gap: 8,
     paddingHorizontal: 40,
   },
-  hintLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: "rgba(255,255,255,0.06)",
-    maxWidth: 60,
-  },
-  hintText: {
-    color: "rgba(255,255,255,0.25)",
+  anonymousBadgeText: {
+    color: "rgba(196, 165, 116, 0.6)",
     fontSize: 12,
     fontWeight: "500",
   },
@@ -766,7 +933,7 @@ const styles = StyleSheet.create({
   // Modal
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    backgroundColor: "rgba(0,0,0,0.8)",
     justifyContent: "flex-end",
   },
   modalContent: {
@@ -800,31 +967,44 @@ const styles = StyleSheet.create({
   reactionsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
+    justifyContent: "space-between",
     gap: 12,
     marginBottom: 24,
   },
   reactionButton: {
-    width: (width - 48 - 24) / 3 - 1,
-    aspectRatio: 1,
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderRadius: 20,
+    width: (width - 48 - 24) / 3,
+    paddingVertical: 16,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.08)",
-    gap: 8,
+    gap: 10,
+  },
+  reactionIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "rgba(196, 165, 116, 0.15)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   reactionLabel: {
-    color: "rgba(255,255,255,0.6)",
-    fontSize: 12,
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 13,
     fontWeight: "600",
   },
   modalCloseButton: {
     alignItems: "center",
     paddingVertical: 16,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
   },
   modalCloseText: {
-    color: "rgba(255,255,255,0.4)",
+    color: "rgba(255,255,255,0.5)",
     fontSize: 15,
     fontWeight: "600",
   },
