@@ -11,11 +11,14 @@ import {
   Platform,
   ScrollView,
   Keyboard,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
+import { authHelpers } from '../supabaseConfig';
 
 const { width, height } = Dimensions.get('window');
 
@@ -52,6 +55,7 @@ const SignInScreen: React.FC<SignInScreenProps> = ({
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const insets = useSafeAreaInsets();
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -75,10 +79,26 @@ const SignInScreen: React.FC<SignInScreenProps> = ({
     ]).start();
   }, []);
 
-  const handleSignIn = () => {
+  const handleSignIn = async () => {
     Keyboard.dismiss();
-    if (email && password) {
-      onSignIn(email, password);
+    if (!email || !password) return;
+
+    setIsLoading(true);
+    try {
+      const { user, error } = await authHelpers.signIn(email, password);
+      
+      if (error) {
+        Alert.alert('Sign In Failed', error.message || 'Please check your credentials and try again.');
+        return;
+      }
+
+      if (user) {
+        onSignIn(email, password);
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'An unexpected error occurred.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -250,15 +270,15 @@ const SignInScreen: React.FC<SignInScreenProps> = ({
         <TouchableOpacity
           style={[
             styles.primaryButtonWrapper,
-            !isFormValid && styles.buttonDisabled,
+            (!isFormValid || isLoading) && styles.buttonDisabled,
           ]}
           onPress={handleSignIn}
           activeOpacity={0.85}
-          disabled={!isFormValid}
+          disabled={!isFormValid || isLoading}
         >
           <LinearGradient
             colors={
-              isFormValid
+              isFormValid && !isLoading
                 ? [accentColor, accentColor + 'DD']
                 : [accentColor + '50', accentColor + '40']
             }
@@ -266,10 +286,16 @@ const SignInScreen: React.FC<SignInScreenProps> = ({
             end={{ x: 1, y: 1 }}
             style={styles.primaryButton}
           >
-            <Text style={styles.primaryButtonText}>Sign In</Text>
-            <View style={styles.buttonIconContainer}>
-              <Feather name="arrow-right" size={20} color="#FFFFFF" />
-            </View>
+            {isLoading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <>
+                <Text style={styles.primaryButtonText}>Sign In</Text>
+                <View style={styles.buttonIconContainer}>
+                  <Feather name="arrow-right" size={20} color="#FFFFFF" />
+                </View>
+              </>
+            )}
           </LinearGradient>
         </TouchableOpacity>
       </Animated.View>

@@ -9,6 +9,8 @@ import {
   Animated,
   StatusBar,
   Image,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
@@ -17,6 +19,7 @@ import Svg, { Path, Circle, Defs, RadialGradient, Stop } from 'react-native-svg'
 import { router } from 'expo-router';
 import SignInScreen from './SignInScreen';
 import SignUpScreen from './SignUpScreen';
+import { authHelpers } from '../supabaseConfig';
 
 const { width, height } = Dimensions.get('window');
 
@@ -121,6 +124,7 @@ const RaysPattern: React.FC<{ color: string }> = ({ color }) => (
 const OnboardingScreenEnhanced: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<'onboarding' | 'signin' | 'signup'>('onboarding');
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [isAnonymousLoading, setIsAnonymousLoading] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
   const insets = useSafeAreaInsets();
@@ -181,6 +185,27 @@ const OnboardingScreenEnhanced: React.FC = () => {
   // Calculate dynamic spacing based on screen height and safe areas
   const availableHeight = height - insets.top - insets.bottom;
   const isSmallScreen = availableHeight < 700;
+
+  // Handle anonymous sign up
+  const handleAnonymousSignUp = async () => {
+    setIsAnonymousLoading(true);
+    try {
+      const { user, error } = await authHelpers.signUpAnonymous();
+      
+      if (error) {
+        Alert.alert('Error', error.message || 'Failed to continue anonymously. Please try again.');
+        return;
+      }
+
+      if (user) {
+        router.replace('/(tabs)/home');
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'An unexpected error occurred.');
+    } finally {
+      setIsAnonymousLoading(false);
+    }
+  };
 
   // Handle Sign In
   if (currentScreen === 'signin') {
@@ -412,13 +437,20 @@ const OnboardingScreenEnhanced: React.FC = () => {
 
           <TouchableOpacity
             style={[styles.secondaryButton, { borderColor: currentSlide.accentColor + '25' }]}
-            onPress={() => router.replace('/(tabs)/home')}
+            onPress={handleAnonymousSignUp}
             activeOpacity={0.7}
+            disabled={isAnonymousLoading}
           >
-            <Feather name="eye-off" size={18} color={currentSlide.accentColor} />
-            <Text style={[styles.secondaryButtonText, { color: currentSlide.accentColor }]}>
-              Anonymous
-            </Text>
+            {isAnonymousLoading ? (
+              <ActivityIndicator color={currentSlide.accentColor} size="small" />
+            ) : (
+              <>
+                <Feather name="eye-off" size={18} color={currentSlide.accentColor} />
+                <Text style={[styles.secondaryButtonText, { color: currentSlide.accentColor }]}>
+                  Anonymous
+                </Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
 

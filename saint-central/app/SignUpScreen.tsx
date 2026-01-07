@@ -10,11 +10,14 @@ import {
   StatusBar,
   ScrollView,
   Keyboard,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
+import { authHelpers } from '../supabaseConfig';
 
 const { width, height } = Dimensions.get('window');
 
@@ -104,6 +107,7 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({ onBack, onSignUp }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const insets = useSafeAreaInsets();
 
   // Simple fade animation for initial load
@@ -218,13 +222,29 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({ onBack, onSignUp }) => {
     });
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (currentStep < steps.length - 1) {
       animateToNextStep(() => setCurrentStep(currentStep + 1));
     } else {
       Keyboard.dismiss();
       if (password === confirmPassword && password.length >= 8) {
-        onSignUp(email, password);
+        setIsLoading(true);
+        try {
+          const { user, error } = await authHelpers.signUp(email, password);
+          
+          if (error) {
+            Alert.alert('Sign Up Failed', error.message || 'Please try again.');
+            return;
+          }
+
+          if (user) {
+            onSignUp(email, password);
+          }
+        } catch (error: any) {
+          Alert.alert('Error', error.message || 'An unexpected error occurred.');
+        } finally {
+          setIsLoading(false);
+        }
       }
     }
   };
@@ -545,15 +565,15 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({ onBack, onSignUp }) => {
         <TouchableOpacity
           style={[
             styles.primaryButtonWrapper,
-            !isStepValid() && styles.buttonDisabled,
+            (!isStepValid() || isLoading) && styles.buttonDisabled,
           ]}
           onPress={handleNext}
           activeOpacity={0.85}
-          disabled={!isStepValid()}
+          disabled={!isStepValid() || isLoading}
         >
           <LinearGradient
             colors={
-              isStepValid()
+              isStepValid() && !isLoading
                 ? [step.accentColor, step.accentColor + 'DD']
                 : [step.accentColor + '50', step.accentColor + '40']
             }
@@ -561,16 +581,22 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({ onBack, onSignUp }) => {
             end={{ x: 1, y: 1 }}
             style={styles.primaryButton}
           >
-            <Text style={styles.primaryButtonText}>
-              {currentStep === steps.length - 1 ? 'Create Account' : 'Continue'}
-            </Text>
-            <View style={styles.buttonIconContainer}>
-              <Feather
-                name={currentStep === steps.length - 1 ? 'check' : 'arrow-right'}
-                size={20}
-                color="#FFFFFF"
-              />
-            </View>
+            {isLoading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <>
+                <Text style={styles.primaryButtonText}>
+                  {currentStep === steps.length - 1 ? 'Create Account' : 'Continue'}
+                </Text>
+                <View style={styles.buttonIconContainer}>
+                  <Feather
+                    name={currentStep === steps.length - 1 ? 'check' : 'arrow-right'}
+                    size={20}
+                    color="#FFFFFF"
+                  />
+                </View>
+              </>
+            )}
           </LinearGradient>
         </TouchableOpacity>
       </Animated.View>

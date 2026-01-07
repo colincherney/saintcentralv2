@@ -9,7 +9,10 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Alert,
 } from "react-native";
+import { router } from "expo-router";
+import { authHelpers } from "@/supabaseConfig";
 
 type PrayerRequest = {
   id: string;
@@ -49,7 +52,7 @@ const MOCK: PrayerRequest[] = [
     category: "Work",
     createdAt: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(),
     title: "Anxiety + job interview",
-    body: "I’m interviewing Friday. Prayers for calm, clarity, and the right doors to open.",
+    body: "I'm interviewing Friday. Prayers for calm, clarity, and the right doors to open.",
   },
   {
     id: "2",
@@ -72,8 +75,8 @@ const MOCK: PrayerRequest[] = [
 export default function ExplorePrayerDeck() {
   const [cards, setCards] = useState<PrayerRequest[]>(MOCK);
   const [index, setIndex] = useState(0);
-
   const [reactionOpen, setReactionOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const current = cards[index] ?? null;
 
@@ -83,13 +86,11 @@ export default function ExplorePrayerDeck() {
   }, [index, cards.length]);
 
   const goNext = () => {
-    // Later: recordAction(current.id, "next") in Supabase
     if (!current) return;
     setIndex((prev) => Math.min(prev + 1, cards.length));
   };
 
   const pray = () => {
-    // Later: recordAction(current.id, "pray") in Supabase
     if (!current) return;
     setIndex((prev) => Math.min(prev + 1, cards.length));
   };
@@ -100,10 +101,33 @@ export default function ExplorePrayerDeck() {
   };
 
   const chooseReaction = (key: string) => {
-    // Later: recordReaction(current.id, key) in Supabase
     setReactionOpen(false);
-    // For now just advance (optional). Comment this out if you want to stay on same card.
-    // setIndex((prev) => Math.min(prev + 1, cards.length));
+  };
+
+  const handleLogout = () => {
+    Alert.alert(
+      "Log Out",
+      "Are you sure you want to log out?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Log Out",
+          style: "destructive",
+          onPress: async () => {
+            setIsLoggingOut(true);
+            try {
+              await authHelpers.signOut();
+              router.replace("/");
+            } catch (error) {
+              console.error("Logout error:", error);
+              Alert.alert("Error", "Failed to log out. Please try again.");
+            } finally {
+              setIsLoggingOut(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -131,13 +155,24 @@ export default function ExplorePrayerDeck() {
           <TouchableOpacity onPress={restart} style={styles.topButtonGhost} activeOpacity={0.85}>
             <Text style={styles.topButtonGhostText}>Restart</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity 
+            onPress={handleLogout} 
+            style={styles.logoutButton} 
+            activeOpacity={0.85}
+            disabled={isLoggingOut}
+          >
+            <Text style={styles.logoutButtonText}>
+              {isLoggingOut ? "..." : "Log Out"}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* Card */}
         <View style={styles.deckWrap}>
           {!current ? (
             <View style={styles.empty}>
-              <Text style={styles.emptyTitle}>You’re all caught up.</Text>
+              <Text style={styles.emptyTitle}>You're all caught up.</Text>
               <Text style={styles.emptySub}>Check back later or submit one.</Text>
 
               <TouchableOpacity onPress={restart} style={[styles.primary, { marginTop: 14 }]} activeOpacity={0.9}>
@@ -171,7 +206,7 @@ export default function ExplorePrayerDeck() {
               <View style={styles.quickBox}>
                 <Text style={styles.quickTitle}>Quick prayer</Text>
                 <Text style={styles.quickBody}>
-                  “Lord, please be near. Give peace, strength, and wisdom. Amen.”
+                  "Lord, please be near. Give peace, strength, and wisdom. Amen."
                 </Text>
               </View>
             </View>
@@ -207,11 +242,11 @@ export default function ExplorePrayerDeck() {
             activeOpacity={0.9}
           >
             <Text style={[styles.actionBtnTitle, { color: "#111" }]}>Pray</Text>
-            <Text style={[styles.actionBtnSub, { color: "#222" }]}>I’ll pray</Text>
+            <Text style={[styles.actionBtnSub, { color: "#222" }]}>I'll pray</Text>
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.tip}>We’ll add true swipe later once this UI is locked.</Text>
+        <Text style={styles.tip}>We'll add true swipe later once this UI is locked.</Text>
       </View>
 
       {/* Reactions modal */}
@@ -281,6 +316,16 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   topButtonGhostText: { color: "rgba(255,255,255,0.8)", fontWeight: "700" },
+  logoutButton: {
+    marginLeft: "auto",
+    backgroundColor: "rgba(255,100,100,0.15)",
+    borderColor: "rgba(255,100,100,0.3)",
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  logoutButtonText: { color: "rgba(255,100,100,0.9)", fontWeight: "700" },
 
   deckWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
 
