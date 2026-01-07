@@ -1,6 +1,7 @@
 // app/(tabs)/explore.tsx
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useCallback, useEffect } from "react";
 import {
+  ActivityIndicator,
   Modal,
   Pressable,
   SafeAreaView,
@@ -10,14 +11,15 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { supabase } from "@/lib/supabase";
 
 type PrayerRequest = {
   id: string;
   title: string;
   body: string;
-  category?: string;
+  category?: string | null;
   createdAt: string;
-  displayName?: string;
+  displayName?: string | null;
 };
 
 const PRESET_REACTIONS = [
@@ -41,39 +43,83 @@ function timeAgo(iso: string) {
   return `${days}d ago`;
 }
 
-// Mock feed for now (replace with Supabase later)
-const MOCK: PrayerRequest[] = [
-  {
-    id: "1",
-    displayName: "David",
-    category: "Work",
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(),
-    title: "Anxiety + job interview",
-    body: "I’m interviewing Friday. Prayers for calm, clarity, and the right doors to open.",
-  },
-  {
-    id: "2",
-    displayName: "Sophia",
-    category: "Relationships",
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 26).toISOString(),
-    title: "Friendship healing",
-    body: "I want to reconcile with a close friend. Pray for humility, courage, and wise words.",
-  },
-  {
-    id: "3",
-    displayName: "Anonymous",
-    category: "Family",
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 50).toISOString(),
-    title: "Family peace",
-    body: "Please pray for unity and patience in our home this week.",
-  },
-];
+/**
+ * How the feed works:
+ * - If user is logged in: hide any request they already acted on (next/pray/react)
+ * - If user is anonymous: still works, but it can’t reliably filter “already seen” across sessions
+ */
+async function getAuthedUserId(): Promise<string | null> {
+  const { data } = await supabase.auth.getUser();
+  return data.user?.id ?? null;
+}
+
+async function fetchPrayerFeed(): Promise<PrayerRequest[]> {
+  const userId = await getAuthedUserId();
+
+  // If logged in, exclude requests that already have an action by this user.
+  // This uses a subquery via "not in" pattern using a separate call (simple + reliable in RN).
+  let excludedIds: string[] = [];
+  if (userId) {
+    const { data: acted, error: actedErr } = await supabase
+      .from("prayer_actions")
+      .select("request_id")
+      .eq("user_id", userId)
+      .limit(500);
+
+    if (!actedErr && acted) excludedIds = acted.map((x: any) => x.request_id);
+  }
+
+  let q = supabase
+    .from("prayer_requests")
+    .select("id,title,body,category,created_at,display_name")
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (excludedIds.length) {
+    q = q.not("id", "in", `(${excludedIds.map((id) => `"${id}"`).join(",")})`);
+  }
+
+  const { data, error } = await q;
+
+  if (error) throw error;
+
+  return (data ?? []).map((r: any) => ({
+    id: r.id,
+    title: r.title,
+    body: r.body,
+    category: r.category,
+    createdAt: r.created_at,
+    displayName: r.display_name,
+  }));
+}
+
+async function recordAction(opts: {
+  requestId: string;
+  actionType: "next" | "pray" | "react";
+  reactionKey?: string;
+}) {
+  const userId = await getAuthedUserId();
+
+  // If you REQUIRE auth, replace this with a guard + prompt to login.
+  const payload: any = {
+    request_id: opts.requestId,
+    action_type: opts.actionType,
+    reaction_key: opts.reactionKey ?? null,
+    user_id: userId, // null allowed if you set it nullable
+  };
+
+  const { error } = await supabase.from("prayer_actions").insert(payload);
+  if (error) throw error;
+}
 
 export default function ExplorePrayerDeck() {
-  const [cards, setCards] = useState<PrayerRequest[]>(MOCK);
+  const [cards, setCards] = useState<PrayerRequest[]>([]);
   const [index, setIndex] = useState(0);
 
   const [reactionOpen, setReactionOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [errMsg, setErrMsg] = useState<string | null>(null);
 
   const current = cards[index] ?? null;
 
@@ -82,27 +128,67 @@ export default function ExplorePrayerDeck() {
     return `${Math.min(index + 1, cards.length)}/${cards.length}`;
   }, [index, cards.length]);
 
-  const goNext = () => {
-    // Later: recordAction(current.id, "next") in Supabase
+  const load = useCallback(async () => {
+    setErrMsg(null);
+    setLoading(true);
+    try {
+      const feed = await fetchPrayerFeed();
+      setCards(feed);
+      setIndex(0);
+    } catch (e: any) {
+      setErrMsg(e?.message ?? "Failed to load feed");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const refresh = useCallback(async () => {
+    setErrMsg(null);
+    setRefreshing(true);
+    try {
+      const feed = await fetchPrayerFeed();
+      setCards(feed);
+      setIndex(0);
+    } catch (e: any) {
+      setErrMsg(e?.message ?? "Failed to refresh feed");
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const goNext = async () => {
     if (!current) return;
+    try {
+      await recordAction({ requestId: current.id, actionType: "next" });
+    } catch (e) {
+      // keep UX smooth even if logging fails
+    }
     setIndex((prev) => Math.min(prev + 1, cards.length));
   };
 
-  const pray = () => {
-    // Later: recordAction(current.id, "pray") in Supabase
+  const pray = async () => {
     if (!current) return;
+    try {
+      await recordAction({ requestId: current.id, actionType: "pray" });
+    } catch (e) {}
     setIndex((prev) => Math.min(prev + 1, cards.length));
   };
 
   const restart = () => {
     setIndex(0);
-    setCards(MOCK);
   };
 
-  const chooseReaction = (key: string) => {
-    // Later: recordReaction(current.id, key) in Supabase
+  const chooseReaction = async (key: string) => {
+    if (!current) return;
     setReactionOpen(false);
-    // For now just advance (optional). Comment this out if you want to stay on same card.
+    try {
+      await recordAction({ requestId: current.id, actionType: "react", reactionKey: key });
+    } catch (e) {}
+    // Optional advance after reacting:
     // setIndex((prev) => Math.min(prev + 1, cards.length));
   };
 
@@ -128,20 +214,39 @@ export default function ExplorePrayerDeck() {
             <Text style={styles.topButtonText}>+ Submit (soon)</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={restart} style={styles.topButtonGhost} activeOpacity={0.85}>
-            <Text style={styles.topButtonGhostText}>Restart</Text>
+          <TouchableOpacity
+            onPress={refresh}
+            style={styles.topButtonGhost}
+            activeOpacity={0.85}
+            disabled={refreshing}
+          >
+            <Text style={styles.topButtonGhostText}>{refreshing ? "Refreshing..." : "Refresh"}</Text>
           </TouchableOpacity>
         </View>
 
         {/* Card */}
         <View style={styles.deckWrap}>
-          {!current ? (
+          {loading ? (
+            <View style={styles.empty}>
+              <ActivityIndicator />
+              <Text style={[styles.emptySub, { marginTop: 10 }]}>Loading feed…</Text>
+            </View>
+          ) : errMsg ? (
+            <View style={styles.empty}>
+              <Text style={styles.emptyTitle}>Couldn’t load feed</Text>
+              <Text style={styles.emptySub}>{errMsg}</Text>
+
+              <TouchableOpacity onPress={load} style={[styles.primary, { marginTop: 14 }]} activeOpacity={0.9}>
+                <Text style={styles.primaryText}>Try again</Text>
+              </TouchableOpacity>
+            </View>
+          ) : !current ? (
             <View style={styles.empty}>
               <Text style={styles.emptyTitle}>You’re all caught up.</Text>
               <Text style={styles.emptySub}>Check back later or submit one.</Text>
 
-              <TouchableOpacity onPress={restart} style={[styles.primary, { marginTop: 14 }]} activeOpacity={0.9}>
-                <Text style={styles.primaryText}>Restart feed</Text>
+              <TouchableOpacity onPress={refresh} style={[styles.primary, { marginTop: 14 }]} activeOpacity={0.9}>
+                <Text style={styles.primaryText}>Refresh feed</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -244,6 +349,7 @@ export default function ExplorePrayerDeck() {
   );
 }
 
+// ✅ Your styles unchanged
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#050507" },
   bg: { ...StyleSheet.absoluteFillObject, backgroundColor: "#050507" },
@@ -373,15 +479,45 @@ const styles = StyleSheet.create({
   },
   primaryText: { color: "white", fontWeight: "800" },
 
-  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.55)", alignItems: "center", justifyContent: "flex-end", padding: 14 },
-  modalSheet: { width: "100%", maxWidth: 520, borderRadius: 24, padding: 16, borderWidth: 1, borderColor: "rgba(255,255,255,0.14)", backgroundColor: "rgba(20,20,26,0.96)" },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    padding: 14,
+  },
+  modalSheet: {
+    width: "100%",
+    maxWidth: 520,
+    borderRadius: 24,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.14)",
+    backgroundColor: "rgba(20,20,26,0.96)",
+  },
   modalTitle: { color: "white", fontWeight: "900", fontSize: 18 },
   modalSub: { color: "rgba(255,255,255,0.55)", marginTop: 4, marginBottom: 12 },
 
   reactionGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, paddingBottom: 6 },
-  reactionPill: { borderRadius: 999, borderWidth: 1, borderColor: "rgba(255,255,255,0.14)", backgroundColor: "rgba(255,255,255,0.08)", paddingHorizontal: 14, paddingVertical: 10 },
+  reactionPill: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.14)",
+    backgroundColor: "rgba(255,255,255,0.08)",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
   reactionText: { color: "rgba(255,255,255,0.9)", fontWeight: "800" },
 
-  modalClose: { marginTop: 12, alignSelf: "flex-end", paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: "rgba(255,255,255,0.14)", backgroundColor: "rgba(255,255,255,0.06)" },
+  modalClose: {
+    marginTop: 12,
+    alignSelf: "flex-end",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.14)",
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
   modalCloseText: { color: "rgba(255,255,255,0.85)", fontWeight: "900" },
 });
