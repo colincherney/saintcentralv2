@@ -21,7 +21,7 @@
         "ITSAppUsesNonExemptEncryption": false
       },
       "entitlements": {
-        "aps-environment": "production"
+        "com.apple.developer.applesignin": ["Default"]
       }
     },
     "android": {
