@@ -41,7 +41,12 @@ const BackgroundOrb = ({ color, size, top, left, opacity = 0.3 }: any) => (
 export default function EditProfileScreen() {
   const [currentEmail, setCurrentEmail] = useState<string>('');
   const [newEmail, setNewEmail] = useState<string>('');
+  const [password, setPassword] = useState<string>('');
+  const [confirmPassword, setConfirmPassword] = useState<string>('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isUpdatingEmail, setIsUpdatingEmail] = useState(false);
+  const [isUpgradingAccount, setIsUpgradingAccount] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [isAnonymous, setIsAnonymous] = useState(false);
@@ -143,6 +148,75 @@ export default function EditProfileScreen() {
     );
   };
 
+  const handleUpgradeAccount = async () => {
+    // Validate email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!newEmail || !emailRegex.test(newEmail)) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address.');
+      return;
+    }
+
+    // Validate password
+    if (!password || password.length < 6) {
+      Alert.alert('Invalid Password', 'Password must be at least 6 characters long.');
+      return;
+    }
+
+    // Validate password match
+    if (password !== confirmPassword) {
+      Alert.alert('Password Mismatch', 'Passwords do not match. Please try again.');
+      return;
+    }
+
+    setIsUpgradingAccount(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    try {
+      // Update both email and password in Supabase Auth
+      const { error: authError } = await supabase.auth.updateUser({
+        email: newEmail,
+        password: password,
+      });
+
+      if (authError) throw authError;
+
+      // Update email and anonymous_email flag in users table
+      if (userId) {
+        const { error: dbError } = await supabase
+          .from('users')
+          .update({ 
+            email: newEmail,
+            anonymous_email: false,
+          })
+          .eq('id', userId);
+
+        if (dbError) throw dbError;
+      }
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      
+      Alert.alert(
+        'Account Created! 🎉',
+        'Your account has been upgraded successfully. Please check your email to verify your new email address.',
+        [{ text: 'OK', onPress: () => router.replace('/(tabs)/profile') }]
+      );
+      
+      setCurrentEmail(newEmail);
+      setIsAnonymous(false);
+      setPassword('');
+      setConfirmPassword('');
+    } catch (error: any) {
+      console.error('Error upgrading account:', error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert(
+        'Upgrade Failed',
+        error.message || 'Failed to upgrade account. Please try again.'
+      );
+    } finally {
+      setIsUpgradingAccount(false);
+    }
+  };
+
   const handleDeleteAccount = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     
@@ -241,6 +315,16 @@ export default function EditProfileScreen() {
     }
   };
 
+  // Check if upgrade form is valid
+  const isUpgradeFormValid = () => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return (
+      emailRegex.test(newEmail) &&
+      password.length >= 6 &&
+      password === confirmPassword
+    );
+  };
+
   return (
     <View style={styles.container}>
       {/* Background */}
@@ -288,68 +372,205 @@ export default function EditProfileScreen() {
             <View style={styles.headerSpacer} />
           </Animated.View>
 
-          {/* Email Section */}
-          <Animated.View
-            style={[
-              styles.section,
-              {
-                opacity: fadeAnim,
-                transform: [{ translateY: slideAnim }],
-              },
-            ]}
-          >
-            <Text style={styles.sectionTitle}>Email Address</Text>
-            <View style={styles.inputContainer}>
-              <View style={styles.inputWrapper}>
-                <Feather name="mail" size={18} color="rgba(255,255,255,0.4)" style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  value={newEmail}
-                  onChangeText={setNewEmail}
-                  placeholder="Enter new email"
-                  placeholderTextColor="rgba(255,255,255,0.3)"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  editable={!isAnonymous}
-                />
-              </View>
-              
-              {isAnonymous && (
-                <View style={styles.warningBanner}>
-                  <Feather name="alert-circle" size={16} color="#C4A574" />
-                  <Text style={styles.warningText}>
-                    Anonymous accounts cannot update email. Please create a regular account.
-                  </Text>
-                </View>
-              )}
-
-              {currentEmail !== newEmail && !isAnonymous && (
-                <Text style={styles.helperText}>
-                  Current: {currentEmail}
-                </Text>
-              )}
-            </View>
-
-            <TouchableOpacity
+          {/* Anonymous Account Upgrade Section */}
+          {isAnonymous ? (
+            <Animated.View
               style={[
-                styles.updateButton,
-                (isUpdatingEmail || isAnonymous || currentEmail === newEmail) && styles.updateButtonDisabled,
+                styles.section,
+                {
+                  opacity: fadeAnim,
+                  transform: [{ translateY: slideAnim }],
+                },
               ]}
-              onPress={handleUpdateEmail}
-              activeOpacity={0.8}
-              disabled={isUpdatingEmail || isAnonymous || currentEmail === newEmail}
             >
-              {isUpdatingEmail ? (
-                <ActivityIndicator size="small" color="#0D0D0F" />
-              ) : (
-                <>
-                  <Feather name="check" size={18} color="#0D0D0F" />
-                  <Text style={styles.updateButtonText}>Update Email</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </Animated.View>
+              <Text style={styles.sectionTitle}>Create Your Account</Text>
+              
+              <View style={styles.upgradeContainer}>
+                <View style={styles.upgradeHeader}>
+                  <LinearGradient
+                    colors={['#C4A574', '#B89660']}
+                    style={styles.upgradeIconContainer}
+                  >
+                    <Feather name="user-plus" size={24} color="#0D0D0F" />
+                  </LinearGradient>
+                  <View style={styles.upgradeTextContainer}>
+                    <Text style={styles.upgradeHeading}>Upgrade to Full Account</Text>
+                    <Text style={styles.upgradeDescription}>
+                      Create a permanent account to secure your prayers and access them from any device.
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.upgradeBenefits}>
+                  <View style={styles.benefitItem}>
+                    <Feather name="check" size={14} color="#C4A574" />
+                    <Text style={styles.benefitText}>Keep all your existing prayers</Text>
+                  </View>
+                  <View style={styles.benefitItem}>
+                    <Feather name="check" size={14} color="#C4A574" />
+                    <Text style={styles.benefitText}>Access from any device</Text>
+                  </View>
+                  <View style={styles.benefitItem}>
+                    <Feather name="check" size={14} color="#C4A574" />
+                    <Text style={styles.benefitText}>Secure your account with a password</Text>
+                  </View>
+                </View>
+
+                {/* Email Input */}
+                <View style={styles.inputContainer}>
+                  <Text style={styles.inputLabel}>Email Address</Text>
+                  <View style={styles.inputWrapper}>
+                    <Feather name="mail" size={18} color="rgba(255,255,255,0.4)" style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.input}
+                      value={newEmail}
+                      onChangeText={setNewEmail}
+                      placeholder="Enter your email"
+                      placeholderTextColor="rgba(255,255,255,0.3)"
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                  </View>
+                </View>
+
+                {/* Password Input */}
+                <View style={styles.inputContainer}>
+                  <Text style={styles.inputLabel}>Password</Text>
+                  <View style={styles.inputWrapper}>
+                    <Feather name="lock" size={18} color="rgba(255,255,255,0.4)" style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.input}
+                      value={password}
+                      onChangeText={setPassword}
+                      placeholder="Create a password"
+                      placeholderTextColor="rgba(255,255,255,0.3)"
+                      secureTextEntry={!showPassword}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                    <TouchableOpacity
+                      onPress={() => setShowPassword(!showPassword)}
+                      style={styles.eyeButton}
+                    >
+                      <Feather
+                        name={showPassword ? 'eye-off' : 'eye'}
+                        size={18}
+                        color="rgba(255,255,255,0.4)"
+                      />
+                    </TouchableOpacity>
+                  </View>
+                  {password.length > 0 && password.length < 6 && (
+                    <Text style={styles.errorText}>Password must be at least 6 characters</Text>
+                  )}
+                </View>
+
+                {/* Confirm Password Input */}
+                <View style={styles.inputContainer}>
+                  <Text style={styles.inputLabel}>Confirm Password</Text>
+                  <View style={styles.inputWrapper}>
+                    <Feather name="lock" size={18} color="rgba(255,255,255,0.4)" style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.input}
+                      value={confirmPassword}
+                      onChangeText={setConfirmPassword}
+                      placeholder="Confirm your password"
+                      placeholderTextColor="rgba(255,255,255,0.3)"
+                      secureTextEntry={!showConfirmPassword}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                    <TouchableOpacity
+                      onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                      style={styles.eyeButton}
+                    >
+                      <Feather
+                        name={showConfirmPassword ? 'eye-off' : 'eye'}
+                        size={18}
+                        color="rgba(255,255,255,0.4)"
+                      />
+                    </TouchableOpacity>
+                  </View>
+                  {confirmPassword.length > 0 && password !== confirmPassword && (
+                    <Text style={styles.errorText}>Passwords do not match</Text>
+                  )}
+                </View>
+
+                {/* Upgrade Button */}
+                <TouchableOpacity
+                  style={[
+                    styles.upgradeButton,
+                    (!isUpgradeFormValid() || isUpgradingAccount) && styles.upgradeButtonDisabled,
+                  ]}
+                  onPress={handleUpgradeAccount}
+                  activeOpacity={0.8}
+                  disabled={!isUpgradeFormValid() || isUpgradingAccount}
+                >
+                  {isUpgradingAccount ? (
+                    <ActivityIndicator size="small" color="#0D0D0F" />
+                  ) : (
+                    <>
+                      <Feather name="arrow-up-circle" size={18} color="#0D0D0F" />
+                      <Text style={styles.upgradeButtonText}>Create Account</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </Animated.View>
+          ) : (
+            /* Regular Email Section for non-anonymous users */
+            <Animated.View
+              style={[
+                styles.section,
+                {
+                  opacity: fadeAnim,
+                  transform: [{ translateY: slideAnim }],
+                },
+              ]}
+            >
+              <Text style={styles.sectionTitle}>Email Address</Text>
+              <View style={styles.inputContainer}>
+                <View style={styles.inputWrapper}>
+                  <Feather name="mail" size={18} color="rgba(255,255,255,0.4)" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    value={newEmail}
+                    onChangeText={setNewEmail}
+                    placeholder="Enter new email"
+                    placeholderTextColor="rgba(255,255,255,0.3)"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
+
+                {currentEmail !== newEmail && (
+                  <Text style={styles.helperText}>
+                    Current: {currentEmail}
+                  </Text>
+                )}
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.updateButton,
+                  (isUpdatingEmail || currentEmail === newEmail) && styles.updateButtonDisabled,
+                ]}
+                onPress={handleUpdateEmail}
+                activeOpacity={0.8}
+                disabled={isUpdatingEmail || currentEmail === newEmail}
+              >
+                {isUpdatingEmail ? (
+                  <ActivityIndicator size="small" color="#0D0D0F" />
+                ) : (
+                  <>
+                    <Feather name="check" size={18} color="#0D0D0F" />
+                    <Text style={styles.updateButtonText}>Update Email</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </Animated.View>
+          )}
 
           {/* Danger Zone */}
           <Animated.View
@@ -479,6 +700,13 @@ const styles = StyleSheet.create({
   inputContainer: {
     marginBottom: 16,
   },
+  inputLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.5)',
+    marginBottom: 8,
+    marginLeft: 4,
+  },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -498,28 +726,21 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '500',
   },
+  eyeButton: {
+    padding: 8,
+    marginRight: -8,
+  },
   helperText: {
     fontSize: 12,
     color: 'rgba(255,255,255,0.3)',
     marginTop: 8,
     marginLeft: 4,
   },
-  warningBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(196, 165, 116, 0.1)',
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(196, 165, 116, 0.2)',
-  },
-  warningText: {
-    flex: 1,
-    fontSize: 13,
-    color: 'rgba(196, 165, 116, 0.9)',
-    lineHeight: 18,
+  errorText: {
+    fontSize: 12,
+    color: 'rgba(255,100,100,0.8)',
+    marginTop: 8,
+    marginLeft: 4,
   },
   updateButton: {
     flexDirection: 'row',
@@ -534,6 +755,73 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(196, 165, 116, 0.3)',
   },
   updateButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#0D0D0F',
+  },
+
+  // Upgrade Section
+  upgradeContainer: {
+    backgroundColor: 'rgba(196, 165, 116, 0.06)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(196, 165, 116, 0.15)',
+    padding: 20,
+  },
+  upgradeHeader: {
+    flexDirection: 'row',
+    gap: 16,
+    marginBottom: 20,
+  },
+  upgradeIconContainer: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  upgradeTextContainer: {
+    flex: 1,
+  },
+  upgradeHeading: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    marginBottom: 4,
+  },
+  upgradeDescription: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.5)',
+    lineHeight: 20,
+  },
+  upgradeBenefits: {
+    gap: 10,
+    marginBottom: 24,
+    paddingLeft: 4,
+  },
+  benefitItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  benefitText: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.6)',
+  },
+  upgradeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: '#C4A574',
+    marginTop: 8,
+  },
+  upgradeButtonDisabled: {
+    backgroundColor: 'rgba(196, 165, 116, 0.3)',
+  },
+  upgradeButtonText: {
     fontSize: 15,
     fontWeight: '600',
     color: '#0D0D0F',
