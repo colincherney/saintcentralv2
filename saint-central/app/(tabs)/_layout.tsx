@@ -82,6 +82,30 @@ export default function TabLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="saved-prayers"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="my-prayers"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="reflection"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="write-reflection"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }

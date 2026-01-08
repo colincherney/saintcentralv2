@@ -1,5 +1,5 @@
 // app/(tabs)/profile.tsx
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,8 +12,10 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter, useFocusEffect } from 'expo-router';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { authHelpers, supabase } from '@/supabaseConfig';
+import * as Haptics from 'expo-haptics';
 
 const { width, height } = Dimensions.get('window');
 
@@ -32,11 +34,13 @@ const BackgroundOrb = ({ color, size, top, left, opacity = 0.3 }: any) => (
   </View>
 );
 
-const MENU_ITEMS = [
-  { key: 'prayers', label: 'My Prayers', icon: 'file-text', count: 12 },
-  { key: 'prayed', label: 'Prayed For', icon: 'heart', count: 48 },
-  { key: 'saved', label: 'Saved', icon: 'bookmark', count: 5 },
-];
+type MenuItemType = {
+  key: string;
+  label: string;
+  icon: string;
+  count: number;
+  route?: string;
+};
 
 const SETTINGS_ITEMS = [
   { key: 'notifications', label: 'Notifications', icon: 'bell' },
@@ -48,10 +52,52 @@ const SETTINGS_ITEMS = [
 export default function ProfileScreen() {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [stats, setStats] = useState({
+    myPrayers: 0,
+    prayedFor: 0,
+    saved: 0,
+  });
   const insets = useSafeAreaInsets();
+  const router = useRouter();
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
+
+  // Fetch user stats
+  const fetchStats = useCallback(async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Fetch my prayers count
+      const { count: myPrayersCount } = await supabase
+        .from('prayers')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id);
+
+      // Fetch prayed for count
+      const { count: prayedForCount } = await supabase
+        .from('prayer_interactions')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('action', 'prayed');
+
+      // Fetch saved count
+      const { count: savedCount } = await supabase
+        .from('prayer_interactions')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('action', 'saved');
+
+      setStats({
+        myPrayers: myPrayersCount || 0,
+        prayedFor: prayedForCount || 0,
+        saved: savedCount || 0,
+      });
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+    }
+  }, []);
 
   useEffect(() => {
     // Get current user email
@@ -62,6 +108,7 @@ export default function ProfileScreen() {
       }
     };
     getUser();
+    fetchStats();
 
     Animated.parallel([
       Animated.timing(fadeAnim, {
@@ -77,6 +124,19 @@ export default function ProfileScreen() {
       }),
     ]).start();
   }, []);
+
+  // Refresh stats when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      fetchStats();
+    }, [fetchStats])
+  );
+
+  const MENU_ITEMS: MenuItemType[] = [
+    { key: 'prayers', label: 'My Prayers', icon: 'file-text', count: stats.myPrayers, route: '/(tabs)/my-prayers' },
+    { key: 'prayed', label: 'Prayed For', icon: 'heart', count: stats.prayedFor },
+    { key: 'saved', label: 'Saved', icon: 'bookmark', count: stats.saved, route: '/(tabs)/saved-prayers' },
+  ];
 
   const handleLogout = () => {
     Alert.alert(
@@ -101,6 +161,13 @@ export default function ProfileScreen() {
         },
       ]
     );
+  };
+
+  const handleMenuItemPress = (item: MenuItemType) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (item.route) {
+      router.push(item.route as any);
+    }
   };
 
   // Get display name from email
@@ -183,6 +250,7 @@ export default function ProfileScreen() {
                 index < MENU_ITEMS.length - 1 && styles.statCardBorder,
               ]}
               activeOpacity={0.8}
+              onPress={() => handleMenuItemPress(item)}
             >
               <View style={styles.statIconContainer}>
                 <Feather name={item.icon as any} size={20} color="#C4A574" />

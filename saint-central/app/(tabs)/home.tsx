@@ -90,11 +90,15 @@ const SwipeablePrayerCard = ({
   onPray,
   onSkip,
   onReact,
+  onSave,
+  isSaved,
 }: {
   item: PrayerRequest;
   onPray: () => void;
   onSkip: () => void;
   onReact: () => void;
+  onSave: () => void;
+  isSaved: boolean;
 }) => {
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
@@ -229,6 +233,11 @@ const SwipeablePrayerCard = ({
     onReact();
   };
 
+  const handleSavePress = () => {
+    triggerHaptic("light");
+    onSave();
+  };
+
   return (
     <GestureDetector gesture={panGesture}>
       <Animated.View style={[styles.card, cardAnimatedStyle]}>
@@ -242,6 +251,20 @@ const SwipeablePrayerCard = ({
           <Feather name="x" size={24} color="rgba(255,255,255,0.6)" />
           <Text style={[styles.swipeIndicatorText, { color: "rgba(255,255,255,0.6)" }]}>SKIP</Text>
         </Animated.View>
+
+        {/* Bookmark Button - Top Right */}
+        <TouchableOpacity
+          style={styles.bookmarkButton}
+          onPress={handleSavePress}
+          activeOpacity={0.7}
+        >
+          <Feather 
+            name="bookmark"
+            size={20} 
+            color={isSaved ? "#C4A574" : "rgba(255,255,255,0.4)"} 
+            fill={isSaved ? "#C4A574" : "transparent"}
+          />
+        </TouchableOpacity>
 
         {/* Card glow effect */}
         <View style={[styles.cardGlow, { backgroundColor: categoryColor }]} />
@@ -374,10 +397,29 @@ export default function PrayScreen() {
   const [reactionOpen, setReactionOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [savedPrayers, setSavedPrayers] = useState<Set<string>>(new Set());
   const insets = useSafeAreaInsets();
 
   const headerOpacity = useSharedValue(0);
   const headerTranslateY = useSharedValue(-20);
+
+  // Fetch saved prayers for current user
+  const fetchSavedPrayers = useCallback(async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('prayer_interactions')
+        .select('prayer_id')
+        .eq('user_id', userId)
+        .eq('action', 'saved');
+
+      if (error) throw error;
+      
+      const savedIds = new Set(data?.map(p => p.prayer_id) || []);
+      setSavedPrayers(savedIds);
+    } catch (error) {
+      console.error('Error fetching saved prayers:', error);
+    }
+  }, []);
 
   // Fetch prayers from Supabase
   const fetchPrayers = useCallback(async () => {
@@ -387,13 +429,15 @@ export default function PrayScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setCurrentUserId(user.id);
+        await fetchSavedPrayers(user.id);
       }
 
-      // Fetch prayers excluding ones user has already interacted with
+      // Fetch prayers excluding ones user has already interacted with (except saved)
       const { data: interactedPrayers } = await supabase
         .from('prayer_interactions')
         .select('prayer_id')
-        .eq('user_id', user?.id);
+        .eq('user_id', user?.id)
+        .in('action', ['prayed', 'skipped']); // Don't exclude saved prayers
 
       const interactedIds = interactedPrayers?.map(p => p.prayer_id) || [];
 
@@ -423,7 +467,7 @@ export default function PrayScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [fetchSavedPrayers]);
 
   useEffect(() => {
     fetchPrayers();
@@ -460,6 +504,38 @@ export default function PrayScreen() {
       });
     } catch (error) {
       console.error('Error recording interaction:', error);
+    }
+  };
+
+  // Toggle save state
+  const toggleSave = async (prayerId: string) => {
+    if (!currentUserId) return;
+
+    const isSaved = savedPrayers.has(prayerId);
+    
+    try {
+      if (isSaved) {
+        // Remove from saved
+        await supabase
+          .from('prayer_interactions')
+          .delete()
+          .eq('prayer_id', prayerId)
+          .eq('user_id', currentUserId)
+          .eq('action', 'saved');
+        
+        setSavedPrayers(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(prayerId);
+          return newSet;
+        });
+      } else {
+        // Add to saved
+        await recordInteraction(prayerId, 'saved');
+        
+        setSavedPrayers(prev => new Set(prev).add(prayerId));
+      }
+    } catch (error) {
+      console.error('Error toggling save:', error);
     }
   };
 
@@ -566,6 +642,8 @@ export default function PrayScreen() {
             onPray={() => goNext('prayed')}
             onSkip={() => goNext('skipped')}
             onReact={() => setReactionOpen(true)}
+            onSave={() => toggleSave(current.id)}
+            isSaved={savedPrayers.has(current.id)}
           />
         )}
       </View>
@@ -741,6 +819,22 @@ const styles = StyleSheet.create({
     padding: 24,
   },
 
+  // Bookmark Button
+  bookmarkButton: {
+    position: "absolute",
+    top: 24,
+    right: 24,
+    zIndex: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
   // Swipe Indicators
   swipeIndicator: {
     position: "absolute",
@@ -755,7 +849,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   prayIndicator: {
-    right: 24,
+    right: 80, // Offset to avoid bookmark button
     backgroundColor: "rgba(196, 165, 116, 0.15)",
     borderColor: "#C4A574",
   },
