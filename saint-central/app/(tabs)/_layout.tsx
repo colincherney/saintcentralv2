@@ -106,6 +106,12 @@ export default function TabLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="prayed-for"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }

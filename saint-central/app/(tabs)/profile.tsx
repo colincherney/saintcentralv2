@@ -134,7 +134,7 @@ export default function ProfileScreen() {
 
   const MENU_ITEMS: MenuItemType[] = [
     { key: 'prayers', label: 'My Prayers', icon: 'file-text', count: stats.myPrayers, route: '/(tabs)/my-prayers' },
-    { key: 'prayed', label: 'Prayed For', icon: 'heart', count: stats.prayedFor },
+    { key: 'prayed', label: 'Prayed For', icon: 'heart', count: stats.prayedFor, route: '/(tabs)/prayed-for' },
     { key: 'saved', label: 'Saved', icon: 'bookmark', count: stats.saved, route: '/(tabs)/saved-prayers' },
   ];
 
