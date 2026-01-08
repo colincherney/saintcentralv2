@@ -185,66 +185,43 @@ export default function EditProfileScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
 
     try {
-      // Delete all user data from all tables in order (respecting foreign keys)
+      // Get the current session
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
-      // 1. Delete prayer interactions (prayed for, saved)
-      const { error: interactionsError } = await supabase
-        .from('prayer_interactions')
-        .delete()
-        .eq('user_id', userId);
-      
-      if (interactionsError) {
-        console.error('Error deleting interactions:', interactionsError);
-        // Continue with deletion even if this fails
+      if (sessionError || !session?.access_token) {
+        throw new Error('No active session. Please sign in again.');
       }
 
-      // 2. Delete interactions on user's prayers by other users
-      const { data: userPrayers } = await supabase
-        .from('prayers')
-        .select('id')
-        .eq('user_id', userId);
+      console.log('Calling delete-user function with token...');
 
-      if (userPrayers && userPrayers.length > 0) {
-        const prayerIds = userPrayers.map(p => p.id);
-        
-        const { error: otherInteractionsError } = await supabase
-          .from('prayer_interactions')
-          .delete()
-          .in('prayer_id', prayerIds);
-        
-        if (otherInteractionsError) {
-          console.error('Error deleting other interactions:', otherInteractionsError);
-        }
+      // Use Supabase's built-in functions invoke with explicit headers
+      const { data, error } = await supabase.functions.invoke('delete-user', {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      console.log('Function response data:', JSON.stringify(data));
+      console.log('Function response error:', JSON.stringify(error));
+
+      if (error) {
+        // Try to get more details from the error
+        const errorMessage = data?.error || data?.details || error.message || 'Failed to delete account';
+        console.error('Function invoke error details:', errorMessage);
+        throw new Error(errorMessage);
       }
 
-      // 3. Delete user's prayers
-      const { error: prayersError } = await supabase
-        .from('prayers')
-        .delete()
-        .eq('user_id', userId);
-      
-      if (prayersError) {
-        console.error('Error deleting prayers:', prayersError);
+      // Check if data indicates an error
+      if (data && data.error) {
+        throw new Error(data.error + (data.details ? `: ${data.details}` : ''));
       }
 
-      // 4. Delete from users table
-      const { error: usersError } = await supabase
-        .from('users')
-        .delete()
-        .eq('id', userId);
-      
-      if (usersError) {
-        console.error('Error deleting user record:', usersError);
-      }
-
-      // 5. Delete auth user (this should be done via a server function ideally)
-      // Note: supabase.auth.admin.deleteUser requires service role key
-      // For client-side, we sign out and the user record removal should trigger cleanup
-      
-      // Sign out the user
-      await supabase.auth.signOut();
+      console.log('Delete successful:', data);
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      
+      // Sign out locally
+      await supabase.auth.signOut();
       
       Alert.alert(
         'Account Deleted',
