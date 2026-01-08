@@ -1,14 +1,20 @@
 {
   "expo": {
-    "name": "saint-central",
+    "name": "Saint Central",
     "slug": "saint-central",
-    "version": "1.0.0",
+    "version": "5.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "saintcentral",
+    "scheme": "myapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "cover",
+      "backgroundColor": "#000000"
+    },
     "ios": {
+      "bundleIdentifier": "com.saintcentral.app",
       "supportsTablet": true
     },
     "android": {
