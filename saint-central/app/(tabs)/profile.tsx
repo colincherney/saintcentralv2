@@ -99,15 +99,16 @@ export default function ProfileScreen() {
     }
   }, []);
 
+  // Fetch user data
+  const fetchUserData = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      setUserEmail(user.email || null);
+    }
+  }, []);
+
   useEffect(() => {
-    // Get current user email
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setUserEmail(user.email || null);
-      }
-    };
-    getUser();
+    fetchUserData();
     fetchStats();
 
     Animated.parallel([
@@ -125,11 +126,12 @@ export default function ProfileScreen() {
     ]).start();
   }, []);
 
-  // Refresh stats when screen comes into focus
+  // Refresh stats and user data when screen comes into focus
   useFocusEffect(
     useCallback(() => {
       fetchStats();
-    }, [fetchStats])
+      fetchUserData();
+    }, [fetchStats, fetchUserData])
   );
 
   const MENU_ITEMS: MenuItemType[] = [
@@ -168,6 +170,11 @@ export default function ProfileScreen() {
     if (item.route) {
       router.push(item.route as any);
     }
+  };
+
+  const handleEditProfile = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push('/(tabs)/edit-profile' as any);
   };
 
   // Get display name from email
@@ -226,7 +233,11 @@ export default function ProfileScreen() {
           <Text style={styles.displayName}>{getDisplayName()}</Text>
           <Text style={styles.email}>{userEmail || 'Loading...'}</Text>
 
-          <TouchableOpacity style={styles.editButton} activeOpacity={0.8}>
+          <TouchableOpacity 
+            style={styles.editButton} 
+            activeOpacity={0.8}
+            onPress={handleEditProfile}
+          >
             <Feather name="edit-2" size={14} color="rgba(255,255,255,0.6)" />
             <Text style={styles.editButtonText}>Edit Profile</Text>
           </TouchableOpacity>
