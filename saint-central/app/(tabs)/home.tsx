@@ -545,6 +545,7 @@ export default function PrayScreen() {
         let query = supabase
           .from("prayers")
           .select("id, title, body, category, created_at")
+          .eq("approved", "yes") // ⭐ ONLY show AI-approved prayers
           .order("created_at", { ascending: false });
 
         if (excludeIds.length > 0) {
