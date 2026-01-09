@@ -8,6 +8,7 @@ import {
   Animated,
   Dimensions,
   ScrollView,
+  Linking,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
@@ -17,6 +18,8 @@ import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 
 const { width, height } = Dimensions.get('window');
+
+const SUPPORT_EMAIL = 'saintcentral59@gmail.com';
 
 // Decorative background orb
 const BackgroundOrb = ({ color, size, top, left, opacity = 0.3 }: any) => (
@@ -160,6 +163,11 @@ export default function PrivacyScreen() {
   const handleBack = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.back();
+  };
+
+  const handleContactSupport = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=Saint Central Privacy Question`);
   };
 
   return (
@@ -311,7 +319,7 @@ export default function PrivacyScreen() {
           <Text style={styles.contactText}>
             If you have any questions about our privacy practices, please reach out to us.
           </Text>
-          <TouchableOpacity style={styles.contactButton} activeOpacity={0.8}>
+          <TouchableOpacity style={styles.contactButton} activeOpacity={0.8} onPress={handleContactSupport}>
             <Feather name="mail" size={16} color="#C4A574" />
             <Text style={styles.contactButtonText}>Contact Support</Text>
           </TouchableOpacity>
