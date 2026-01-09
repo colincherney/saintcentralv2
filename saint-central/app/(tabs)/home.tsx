@@ -1,5 +1,5 @@
 // app/(tabs)/home.tsx
-import React, { useMemo, useState, useEffect, useCallback } from "react";
+import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import {
   Modal,
   Pressable,
@@ -49,6 +49,14 @@ const PRESET_REACTIONS = [
   { key: "strength", label: "Strength", icon: "shield", color: "#64B5F6" },
   { key: "healing", label: "Healing", icon: "activity", color: "#BA68C8" },
   { key: "guidance", label: "Guidance", icon: "compass", color: "#FFB74D" },
+];
+
+// All interaction types we consider as "seen" for filtering
+const ALL_INTERACTION_TYPES = [
+  "prayed",
+  "skipped",
+  "saved",
+  ...PRESET_REACTIONS.map((r) => r.key),
 ];
 
 const CATEGORIES_COLORS: Record<string, string> = {
@@ -425,7 +433,7 @@ const SwipeablePrayerCard = ({
   );
 };
 
-const EmptyState = ({ onRestart }: { onRestart: () => void }) => {
+const EmptyState = ({ onRestart, hasMore }: { onRestart: () => void; hasMore: boolean }) => {
   const opacity = useSharedValue(0);
   const scale = useSharedValue(0.9);
 
@@ -449,21 +457,25 @@ const EmptyState = ({ onRestart }: { onRestart: () => void }) => {
           <Feather name="check-circle" size={40} color="#C4A574" />
         </LinearGradient>
       </View>
-      <Text style={styles.emptyTitle}>All Caught Up!</Text>
+      <Text style={styles.emptyTitle}>{hasMore ? "All Caught Up!" : "That's all for now"}</Text>
       <Text style={styles.emptySubtitle}>
-        You've prayed through all the requests.{"\n"}Thank you for your faithfulness.
+        {hasMore
+          ? "You've prayed through this set of requests.\nTap below to load more."
+          : "You've seen every available prayer request.\nNew requests will appear here when they're added."}
       </Text>
-      <TouchableOpacity
-        style={styles.emptyButton}
-        onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          onRestart();
-        }}
-        activeOpacity={0.8}
-      >
-        <Feather name="refresh-cw" size={16} color="#C4A574" />
-        <Text style={styles.emptyButtonText}>Load More Prayers</Text>
-      </TouchableOpacity>
+      {hasMore && (
+        <TouchableOpacity
+          style={styles.emptyButton}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            onRestart();
+          }}
+          activeOpacity={0.8}
+        >
+          <Feather name="refresh-cw" size={16} color="#C4A574" />
+          <Text style={styles.emptyButtonText}>Load More Prayers</Text>
+        </TouchableOpacity>
+      )}
     </Animated.View>
   );
 };
@@ -476,7 +488,11 @@ export default function PrayScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [savedPrayers, setSavedPrayers] = useState<Set<string>>(new Set());
+  const [hasMore, setHasMore] = useState(true);
   const insets = useSafeAreaInsets();
+
+  // Track which prayers have been shown this session so we don't re-fetch them
+  const seenPrayerIdsRef = useRef<Set<string>>(new Set());
 
   const headerOpacity = useSharedValue(0);
   const headerTranslateY = useSharedValue(-20);
@@ -500,51 +516,80 @@ export default function PrayScreen() {
     }
   }, []);
 
-  const fetchPrayers = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (user) {
-        setCurrentUserId(user.id);
-        await fetchSavedPrayers(user.id);
+  const fetchPrayers = useCallback(
+    async (options?: { resetSeen?: boolean }) => {
+      setIsLoading(true);
+      try {
+        if (options?.resetSeen) {
+          seenPrayerIdsRef.current = new Set();
+        }
+
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user) {
+          setCurrentUserId(user.id);
+          await fetchSavedPrayers(user.id);
+        }
+
+        const { data: interactedPrayers } = await supabase
+          .from("prayer_interactions")
+          .select("prayer_id")
+          .eq("user_id", user?.id)
+          .in("action", ALL_INTERACTION_TYPES);
+
+        const interactedIds = interactedPrayers?.map((p) => p.prayer_id) || [];
+        const alreadySeenIds = Array.from(seenPrayerIdsRef.current);
+        const excludeIds = [...interactedIds, ...alreadySeenIds];
+
+        let query = supabase
+          .from("prayers")
+          .select("id, title, body, category, created_at")
+          .order("created_at", { ascending: false });
+
+        if (excludeIds.length > 0) {
+          query = query.not("id", "in", `(${excludeIds.join(",")})`);
+        }
+        if (user) {
+          query = query.neq("user_id", user.id);
+        }
+
+        // Only load 10 at a time
+        const { data, error } = await query.limit(10);
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          // Random order for this batch
+          const shuffled = [...data];
+          for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+          }
+
+          setCards(shuffled);
+          setIndex(0);
+          setHistory([]);
+          setHasMore(true);
+
+          shuffled.forEach((p) => seenPrayerIdsRef.current.add(p.id));
+        } else {
+          // No more unseen prayers at all
+          setCards([]);
+          setIndex(0);
+          setHistory([]);
+          setHasMore(false);
+        }
+      } catch (error) {
+        console.error("Error fetching prayers:", error);
+      } finally {
+        setIsLoading(false);
       }
-
-      const { data: interactedPrayers } = await supabase
-        .from("prayer_interactions")
-        .select("prayer_id")
-        .eq("user_id", user?.id)
-        .in("action", ["prayed", "skipped"]);
-
-      const interactedIds = interactedPrayers?.map((p) => p.prayer_id) || [];
-
-      let query = supabase
-        .from("prayers")
-        .select("id, title, body, category, created_at")
-        .order("created_at", { ascending: false });
-
-      if (interactedIds.length > 0) {
-        query = query.not("id", "in", `(${interactedIds.join(",")})`);
-      }
-      if (user) {
-        query = query.neq("user_id", user.id);
-      }
-
-      const { data, error } = await query.limit(50);
-      if (error) throw error;
-      setCards(data || []);
-      setIndex(0);
-      setHistory([]);
-    } catch (error) {
-      console.error("Error fetching prayers:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [fetchSavedPrayers]);
+    },
+    [fetchSavedPrayers]
+  );
 
   useEffect(() => {
-    fetchPrayers();
+    fetchPrayers({ resetSeen: true });
   }, [fetchPrayers]);
 
   useEffect(() => {
@@ -594,7 +639,10 @@ export default function PrayScreen() {
     try {
       await supabase
         .from("prayer_interactions")
-        .upsert({ prayer_id: prayerId, user_id: currentUserId, action }, { onConflict: "prayer_id,user_id,action" });
+        .upsert(
+          { prayer_id: prayerId, user_id: currentUserId, action },
+          { onConflict: "prayer_id,user_id,action" }
+        );
     } catch (error) {
       console.error("Error recording interaction:", error);
     }
@@ -740,7 +788,7 @@ export default function PrayScreen() {
           </View>
         ) : !current ? (
           <View style={styles.centerWrapper}>
-            <EmptyState onRestart={fetchPrayers} />
+            <EmptyState onRestart={() => fetchPrayers()} hasMore={hasMore} />
           </View>
         ) : (
           <View style={styles.cardWithToasts}>
