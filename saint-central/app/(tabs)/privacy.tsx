@@ -162,7 +162,7 @@ export default function PrivacyScreen() {
 
   const handleBack = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.back();
+    router.push("/(tabs)/profile");
   };
 
   const handleContactSupport = () => {
