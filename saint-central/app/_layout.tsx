@@ -2,11 +2,14 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import 'react-native-reanimated';
+import * as SplashScreen from 'expo-splash-screen';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { supabase } from '@/supabaseConfig';
+
+// Prevent splash screen from auto-hiding
+SplashScreen.preventAutoHideAsync();
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -15,7 +18,7 @@ export const unstable_settings = {
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const [isReady, setIsReady] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const router = useRouter();
   const segments = useSegments();
 
@@ -37,26 +40,31 @@ export default function RootLayout() {
 
   // Handle routing based on auth state
   useEffect(() => {
-    if (!isReady) return;
+    if (!isReady || isAuthenticated === null) return;
 
     const inProtectedRoute = segments[0] === '(tabs)';
 
     if (isAuthenticated && !inProtectedRoute) {
-      // Logged in but on onboarding -> go to home
       router.replace('/(tabs)/home');
     } else if (!isAuthenticated && inProtectedRoute) {
-      // Not logged in but on protected route -> go to onboarding
       router.replace('/');
     }
   }, [isReady, isAuthenticated, segments]);
 
-  // Show loading screen while checking session
-  if (!isReady) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#9B8B7A" />
-      </View>
-    );
+  // Hide splash screen once everything is ready and routing is determined
+  useEffect(() => {
+    if (isReady && isAuthenticated !== null) {
+      // Small delay to ensure navigation has completed
+      const timer = setTimeout(() => {
+        SplashScreen.hideAsync();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [isReady, isAuthenticated]);
+
+  // Don't render anything until ready - splash screen stays visible
+  if (!isReady || isAuthenticated === null) {
+    return null;
   }
 
   return (
@@ -70,12 +78,3 @@ export default function RootLayout() {
     </ThemeProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FAF8F5',
-  },
-});
