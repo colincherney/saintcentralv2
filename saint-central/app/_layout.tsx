@@ -1,7 +1,7 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import 'react-native-reanimated';
 import * as SplashScreen from 'expo-splash-screen';
 
@@ -19,18 +19,17 @@ export default function RootLayout() {
   const colorScheme = useColorScheme();
   const [isReady, setIsReady] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [navigationComplete, setNavigationComplete] = useState(false);
   const router = useRouter();
   const segments = useSegments();
 
   // Listen for auth state changes
   useEffect(() => {
-    // Check initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setIsAuthenticated(!!session);
       setIsReady(true);
     });
 
-    // Listen for auth changes (login, logout, etc.)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setIsAuthenticated(!!session);
     });
@@ -48,21 +47,37 @@ export default function RootLayout() {
       router.replace('/(tabs)/home');
     } else if (!isAuthenticated && inProtectedRoute) {
       router.replace('/');
+    } else {
+      // Already on the correct route
+      setNavigationComplete(true);
     }
   }, [isReady, isAuthenticated, segments]);
 
-  // Hide splash screen once everything is ready and routing is determined
+  // Mark navigation complete after redirect
   useEffect(() => {
-    if (isReady && isAuthenticated !== null) {
-      // Small delay to ensure navigation has completed
+    if (!isReady || isAuthenticated === null) return;
+    
+    const inProtectedRoute = segments[0] === '(tabs)';
+    
+    // Check if we're now on the correct route
+    if (isAuthenticated && inProtectedRoute) {
+      setNavigationComplete(true);
+    } else if (!isAuthenticated && !inProtectedRoute) {
+      setNavigationComplete(true);
+    }
+  }, [isReady, isAuthenticated, segments]);
+
+  // Hide splash screen only after navigation is complete
+  useEffect(() => {
+    if (navigationComplete) {
       const timer = setTimeout(() => {
         SplashScreen.hideAsync();
-      }, 100);
+      }, 50);
       return () => clearTimeout(timer);
     }
-  }, [isReady, isAuthenticated]);
+  }, [navigationComplete]);
 
-  // Don't render anything until ready - splash screen stays visible
+  // Don't render anything until ready
   if (!isReady || isAuthenticated === null) {
     return null;
   }
