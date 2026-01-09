@@ -73,6 +73,9 @@ export default function HomeScreen() {
     ]).start();
   }, []);
 
+  const isFormValid =
+    title.trim().length > 0 && prayer.trim().length > 0 && selectedCategory;
+
   const handleSubmit = async () => {
     Keyboard.dismiss();
     if (!isFormValid || isSubmitting) return;
@@ -81,43 +84,58 @@ export default function HomeScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
         Alert.alert('Error', 'You must be logged in to submit a prayer.');
         return;
       }
 
-      // Insert prayer
-      const { error } = await supabase.from('prayers').insert({
-        user_id: user.id,
-        title: title.trim(),
-        body: prayer.trim(),
-        category: selectedCategory,
+      // Call Supabase Edge Function: submit-prayer
+      const { data, error } = await supabase.functions.invoke('submit-prayer', {
+        body: {
+          title: title.trim(),
+          body: prayer.trim(),
+          category: selectedCategory,
+          user_id: user.id,
+        },
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Edge Function error:', error);
+        throw new Error(error.message || 'Edge Function error');
+      }
 
-      // Success - clear form
+      const approved = data?.approved || 'maybe';
+
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
       Alert.alert(
-        'Prayer Shared',
-        'Your prayer has been shared anonymously. Others will be praying for you.',
-        [{ text: 'OK' }]
+        'Prayer Submitted',
+        approved === 'yes'
+          ? 'Your prayer was approved and posted publicly.'
+          : approved === 'no'
+          ? 'Your prayer was submitted but hidden for safety review.'
+          : 'Your prayer is pending human review for safety.'
       );
+
       setTitle('');
       setPrayer('');
       setSelectedCategory(null);
-    } catch (error: any) {
-      console.error('Error submitting prayer:', error);
+    } catch (e: any) {
+      console.error('Error submitting prayer:', e);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Error', error.message || 'Failed to submit prayer. Please try again.');
+      Alert.alert(
+        'Error',
+        e?.message || 'Failed to submit prayer. Please try again.'
+      );
     } finally {
       setIsSubmitting(false);
     }
   };
-
-  const isFormValid = title.trim().length > 0 && prayer.trim().length > 0 && selectedCategory;
 
   return (
     <View style={styles.container}>
@@ -129,8 +147,20 @@ export default function HomeScreen() {
       />
 
       {/* Decorative orbs */}
-      <BackgroundOrb color="#C4A574" size={250} top={-80} left={width - 100} opacity={0.12} />
-      <BackgroundOrb color="#A5B4A5" size={200} top={height * 0.5} left={-80} opacity={0.1} />
+      <BackgroundOrb
+        color="#C4A574"
+        size={250}
+        top={-80}
+        left={width - 100}
+        opacity={0.12}
+      />
+      <BackgroundOrb
+        color="#A5B4A5"
+        size={200}
+        top={height * 0.5}
+        left={-80}
+        opacity={0.1}
+      />
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -156,7 +186,9 @@ export default function HomeScreen() {
             ]}
           >
             <Text style={styles.headerTitle}>New Prayer</Text>
-            <Text style={styles.headerSubtitle}>Share your heart with the community</Text>
+            <Text style={styles.headerSubtitle}>
+              Share your heart with the community
+            </Text>
           </Animated.View>
 
           {/* Form */}
@@ -213,7 +245,8 @@ export default function HomeScreen() {
                     key={cat.key}
                     style={[
                       styles.categoryButton,
-                      selectedCategory === cat.key && styles.categoryButtonActive,
+                      selectedCategory === cat.key &&
+                        styles.categoryButtonActive,
                     ]}
                     onPress={() => setSelectedCategory(cat.key)}
                     activeOpacity={0.8}
@@ -230,7 +263,8 @@ export default function HomeScreen() {
                     <Text
                       style={[
                         styles.categoryLabel,
-                        selectedCategory === cat.key && styles.categoryLabelActive,
+                        selectedCategory === cat.key &&
+                          styles.categoryLabelActive,
                       ]}
                     >
                       {cat.label}
@@ -248,24 +282,37 @@ export default function HomeScreen() {
               <View style={styles.anonymousTextContainer}>
                 <Text style={styles.anonymousTitle}>100% Anonymous</Text>
                 <Text style={styles.anonymousDescription}>
-                  Your identity is always private. No one will ever see your name.
+                  Your identity is always private. No one will ever see your
+                  name.
                 </Text>
               </View>
             </View>
 
             {/* Submit Button */}
             <TouchableOpacity
-              style={[styles.submitButton, (!isFormValid || isSubmitting) && styles.submitButtonDisabled]}
+              style={[
+                styles.submitButton,
+                (!isFormValid || isSubmitting) && styles.submitButtonDisabled,
+              ]}
               onPress={handleSubmit}
               activeOpacity={0.9}
               disabled={!isFormValid || isSubmitting}
             >
               <LinearGradient
-                colors={isFormValid && !isSubmitting ? ['#C4A574', '#B89660'] : ['#3A3A3C', '#2C2C2E']}
+                colors={
+                  isFormValid && !isSubmitting
+                    ? ['#C4A574', '#B89660']
+                    : ['#3A3A3C', '#2C2C2E']
+                }
                 style={styles.submitGradient}
               >
                 {isSubmitting ? (
-                  <Text style={[styles.submitText, !isFormValid && styles.submitTextDisabled]}>
+                  <Text
+                    style={[
+                      styles.submitText,
+                      !isFormValid && styles.submitTextDisabled,
+                    ]}
+                  >
                     Sharing...
                   </Text>
                 ) : (
@@ -273,7 +320,11 @@ export default function HomeScreen() {
                     <Feather
                       name="send"
                       size={18}
-                      color={isFormValid ? '#0D0D0F' : 'rgba(255,255,255,0.3)'}
+                      color={
+                        isFormValid
+                          ? '#0D0D0F'
+                          : 'rgba(255,255,255,0.3)'
+                      }
                     />
                     <Text
                       style={[
@@ -313,7 +364,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
 
-  // Header
   header: {
     marginBottom: 32,
   },
@@ -330,7 +380,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
-  // Form
   form: {
     gap: 24,
   },
@@ -370,7 +419,6 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
 
-  // Categories
   categoriesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -400,7 +448,6 @@ const styles = StyleSheet.create({
     color: '#0D0D0F',
   },
 
-  // Anonymous Notice
   anonymousNotice: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -435,7 +482,6 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-  // Submit Button
   submitButton: {
     marginTop: 8,
     borderRadius: 16,
