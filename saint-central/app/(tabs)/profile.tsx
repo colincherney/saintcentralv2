@@ -50,7 +50,7 @@ type SettingsItemType = {
 };
 
 const SETTINGS_ITEMS: SettingsItemType[] = [
-  { key: 'notifications', label: 'Notifications', icon: 'bell' },
+  { key: 'notifications', label: 'Notifications', icon: 'bell', route: '/(tabs)/notifications' },
   { key: 'privacy', label: 'Privacy', icon: 'shield', route: '/(tabs)/privacy' },
   { key: 'help', label: 'Help & Support', icon: 'help-circle', route: '/(tabs)/support' },
   { key: 'about', label: 'About', icon: 'info', route: '/(tabs)/about' },
