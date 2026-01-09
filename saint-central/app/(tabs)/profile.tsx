@@ -42,9 +42,16 @@ type MenuItemType = {
   route?: string;
 };
 
-const SETTINGS_ITEMS = [
+type SettingsItemType = {
+  key: string;
+  label: string;
+  icon: string;
+  route?: string;
+};
+
+const SETTINGS_ITEMS: SettingsItemType[] = [
   { key: 'notifications', label: 'Notifications', icon: 'bell' },
-  { key: 'privacy', label: 'Privacy', icon: 'shield' },
+  { key: 'privacy', label: 'Privacy', icon: 'shield', route: '/(tabs)/privacy' },
   { key: 'help', label: 'Help & Support', icon: 'help-circle' },
   { key: 'about', label: 'About', icon: 'info' },
 ];
@@ -172,6 +179,13 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleSettingsItemPress = (item: SettingsItemType) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (item.route) {
+      router.push(item.route as any);
+    }
+  };
+
   const handleEditProfile = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push('/(tabs)/edit-profile' as any);
@@ -292,6 +306,7 @@ export default function ProfileScreen() {
                   index < SETTINGS_ITEMS.length - 1 && styles.menuItemBorder,
                 ]}
                 activeOpacity={0.8}
+                onPress={() => handleSettingsItemPress(item)}
               >
                 <View style={styles.menuItemLeft}>
                   <View style={styles.menuIconContainer}>
