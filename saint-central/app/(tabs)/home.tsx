@@ -31,6 +31,8 @@ import { supabase } from "@/supabaseConfig";
 const { width, height } = Dimensions.get("window");
 const SWIPE_THRESHOLD = width * 0.25;
 
+const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
+
 type PrayerRequest = {
   id: string;
   title: string;
@@ -116,6 +118,12 @@ const SwipeablePrayerCard = ({
   const translateY = useSharedValue(0);
   const cardOpacity = useSharedValue(0);
   const cardScale = useSharedValue(0.95);
+
+  // Feedback shared values
+  const prayFlash = useSharedValue(0);
+  const prayButtonScale = useSharedValue(1);
+  const reactionButtonScale = useSharedValue(1);
+
   const [isScrolling, setIsScrolling] = useState(false);
 
   const categoryColor = CATEGORIES_COLORS[item.category || "General"] || "#B4B4B4";
@@ -141,9 +149,22 @@ const SwipeablePrayerCard = ({
     }
   };
 
+  const triggerPrayFeedback = () => {
+    // Card flash + subtle glow
+    prayFlash.value = 0;
+    prayFlash.value = withTiming(1, { duration: 150 }, () => {
+      prayFlash.value = withTiming(0, { duration: 280 });
+    });
+
+    // Primary button pulse
+    prayButtonScale.value = 0.9;
+    prayButtonScale.value = withSpring(1, { damping: 10, stiffness: 220 });
+  };
+
   const handleSwipeComplete = (direction: "left" | "right") => {
     if (direction === "right") {
       triggerHaptic("success");
+      triggerPrayFeedback();
       onPray();
     } else {
       triggerHaptic("light");
@@ -157,7 +178,7 @@ const SwipeablePrayerCard = ({
       translateX.value = event.translationX;
       translateY.value = event.translationY * 0.1;
     })
-    .onEnd((event) => {
+    .onEnd(() => {
       const shouldSwipeRight = translateX.value > SWIPE_THRESHOLD;
       const shouldSwipeLeft = translateX.value < -SWIPE_THRESHOLD;
 
@@ -208,22 +229,44 @@ const SwipeablePrayerCard = ({
     return { opacity, transform: [{ scale }] };
   });
 
+  const prayFlashStyle = useAnimatedStyle(() => {
+    return {
+      opacity: prayFlash.value,
+      transform: [
+        {
+          scale: interpolate(prayFlash.value, [0, 1], [1, 1.05]),
+        },
+      ],
+    };
+  });
+
+  const prayButtonAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: prayButtonScale.value }],
+  }));
+
+  const reactionButtonAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: reactionButtonScale.value }],
+  }));
+
   const handlePrayPress = () => {
     triggerHaptic("success");
+    triggerPrayFeedback();
     translateX.value = withTiming(width * 1.3, { duration: 350 });
     cardOpacity.value = withTiming(0, { duration: 300 });
-    setTimeout(() => onPray(), 350);
+    setTimeout(() => onPray(), 260);
   };
 
   const handleSkipPress = () => {
     triggerHaptic("light");
     translateX.value = withTiming(-width * 1.3, { duration: 350 });
     cardOpacity.value = withTiming(0, { duration: 300 });
-    setTimeout(() => onSkip(), 350);
+    setTimeout(() => onSkip(), 260);
   };
 
   const handleReactPress = () => {
     triggerHaptic("light");
+    reactionButtonScale.value = 0.9;
+    reactionButtonScale.value = withSpring(1, { damping: 10, stiffness: 220 });
     onReact();
   };
 
@@ -251,6 +294,19 @@ const SwipeablePrayerCard = ({
           </View>
         </Animated.View>
 
+        {/* Pray flash overlay */}
+        <Animated.View pointerEvents="none" style={[styles.prayFlashOverlay, prayFlashStyle]}>
+          <LinearGradient
+            colors={[categoryColor + "50", "transparent"]}
+            style={styles.prayFlashGradient}
+          >
+            <View style={styles.prayFlashInner}>
+              <Feather name="check-circle" size={18} color="#1A1A1C" />
+              <Text style={styles.prayFlashText}>Prayer sent</Text>
+            </View>
+          </LinearGradient>
+        </Animated.View>
+
         <View style={styles.cardInner}>
           <LinearGradient
             colors={[categoryColor + "25", "transparent"]}
@@ -276,7 +332,11 @@ const SwipeablePrayerCard = ({
                 onPress={handleSavePress}
                 activeOpacity={0.7}
               >
-                <Feather name="bookmark" size={16} color={isSaved ? "#C4A574" : "rgba(255,255,255,0.4)"} />
+                <Feather
+                  name="bookmark"
+                  size={16}
+                  color={isSaved ? "#C4A574" : "rgba(255,255,255,0.4)"}
+                />
               </TouchableOpacity>
             </View>
           </View>
@@ -342,18 +402,22 @@ const SwipeablePrayerCard = ({
               <Feather name="x" size={20} color="rgba(255,255,255,0.6)" />
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionButtonCenter} onPress={handleReactPress} activeOpacity={0.7}>
+            <AnimatedTouchableOpacity
+              style={[styles.actionButtonCenter, reactionButtonAnimatedStyle]}
+              onPress={handleReactPress}
+              activeOpacity={0.7}
+            >
               <Feather name="heart" size={18} color="rgba(255,255,255,0.7)" />
-            </TouchableOpacity>
+            </AnimatedTouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.actionButtonPrimary, { backgroundColor: categoryColor }]}
+            <AnimatedTouchableOpacity
+              style={[styles.actionButtonPrimary, { backgroundColor: categoryColor }, prayButtonAnimatedStyle]}
               onPress={handlePrayPress}
               activeOpacity={0.8}
             >
               <Feather name="check" size={18} color="#1A1A1C" />
               <Text style={styles.actionButtonPrimaryText}>I Prayed</Text>
-            </TouchableOpacity>
+            </AnimatedTouchableOpacity>
           </View>
         </View>
       </Animated.View>
@@ -417,47 +481,54 @@ export default function PrayScreen() {
   const headerOpacity = useSharedValue(0);
   const headerTranslateY = useSharedValue(-20);
 
+  // Encouragement + pray toasts / glow
+  const reactionToast = useSharedValue(0);
+  const reactionGlow = useSharedValue(0);
+  const prayToast = useSharedValue(0);
+
   const fetchSavedPrayers = useCallback(async (userId: string) => {
     try {
       const { data, error } = await supabase
-        .from('prayer_interactions')
-        .select('prayer_id')
-        .eq('user_id', userId)
-        .eq('action', 'saved');
+        .from("prayer_interactions")
+        .select("prayer_id")
+        .eq("user_id", userId)
+        .eq("action", "saved");
       if (error) throw error;
-      setSavedPrayers(new Set(data?.map(p => p.prayer_id) || []));
+      setSavedPrayers(new Set(data?.map((p) => p.prayer_id) || []));
     } catch (error) {
-      console.error('Error fetching saved prayers:', error);
+      console.error("Error fetching saved prayers:", error);
     }
   }, []);
 
   const fetchPrayers = useCallback(async () => {
     setIsLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (user) {
         setCurrentUserId(user.id);
         await fetchSavedPrayers(user.id);
       }
 
       const { data: interactedPrayers } = await supabase
-        .from('prayer_interactions')
-        .select('prayer_id')
-        .eq('user_id', user?.id)
-        .in('action', ['prayed', 'skipped']);
+        .from("prayer_interactions")
+        .select("prayer_id")
+        .eq("user_id", user?.id)
+        .in("action", ["prayed", "skipped"]);
 
-      const interactedIds = interactedPrayers?.map(p => p.prayer_id) || [];
+      const interactedIds = interactedPrayers?.map((p) => p.prayer_id) || [];
 
       let query = supabase
-        .from('prayers')
-        .select('id, title, body, category, created_at')
-        .order('created_at', { ascending: false });
+        .from("prayers")
+        .select("id, title, body, category, created_at")
+        .order("created_at", { ascending: false });
 
       if (interactedIds.length > 0) {
-        query = query.not('id', 'in', `(${interactedIds.join(',')})`);
+        query = query.not("id", "in", `(${interactedIds.join(",")})`);
       }
       if (user) {
-        query = query.neq('user_id', user.id);
+        query = query.neq("user_id", user.id);
       }
 
       const { data, error } = await query.limit(50);
@@ -466,7 +537,7 @@ export default function PrayScreen() {
       setIndex(0);
       setHistory([]);
     } catch (error) {
-      console.error('Error fetching prayers:', error);
+      console.error("Error fetching prayers:", error);
     } finally {
       setIsLoading(false);
     }
@@ -486,16 +557,46 @@ export default function PrayScreen() {
     transform: [{ translateY: headerTranslateY.value }],
   }));
 
+  const reactionToastStyle = useAnimatedStyle(() => ({
+    opacity: reactionToast.value,
+    transform: [
+      {
+        translateY: interpolate(reactionToast.value, [0, 1], [20, 0]),
+      },
+    ],
+  }));
+
+  const reactionGlowStyle = useAnimatedStyle(() => ({
+    opacity: reactionGlow.value,
+  }));
+
+  const prayToastStyle = useAnimatedStyle(() => ({
+    opacity: prayToast.value,
+    transform: [
+      {
+        translateY: interpolate(prayToast.value, [0, 1], [20, 0]),
+      },
+    ],
+  }));
+
   const current = cards[index] ?? null;
-  const countText = useMemo(() => (!cards.length ? "0 / 0" : `${Math.min(index + 1, cards.length)} / ${cards.length}`), [index, cards.length]);
-  const progressPercent = useMemo(() => (!cards.length ? 0 : (index / cards.length) * 100), [index, cards.length]);
+  const countText = useMemo(
+    () => (!cards.length ? "0 / 0" : `${Math.min(index + 1, cards.length)} / ${cards.length}`),
+    [index, cards.length]
+  );
+  const progressPercent = useMemo(
+    () => (!cards.length ? 0 : (index / cards.length) * 100),
+    [index, cards.length]
+  );
 
   const recordInteraction = async (prayerId: string, action: string) => {
     if (!currentUserId) return;
     try {
-      await supabase.from('prayer_interactions').upsert({ prayer_id: prayerId, user_id: currentUserId, action }, { onConflict: 'prayer_id,user_id,action' });
+      await supabase
+        .from("prayer_interactions")
+        .upsert({ prayer_id: prayerId, user_id: currentUserId, action }, { onConflict: "prayer_id,user_id,action" });
     } catch (error) {
-      console.error('Error recording interaction:', error);
+      console.error("Error recording interaction:", error);
     }
   };
 
@@ -504,44 +605,85 @@ export default function PrayScreen() {
     const isSaved = savedPrayers.has(prayerId);
     try {
       if (isSaved) {
-        await supabase.from('prayer_interactions').delete().eq('prayer_id', prayerId).eq('user_id', currentUserId).eq('action', 'saved');
-        setSavedPrayers(prev => { const n = new Set(prev); n.delete(prayerId); return n; });
+        await supabase
+          .from("prayer_interactions")
+          .delete()
+          .eq("prayer_id", prayerId)
+          .eq("user_id", currentUserId)
+          .eq("action", "saved");
+        setSavedPrayers((prev) => {
+          const n = new Set(prev);
+          n.delete(prayerId);
+          return n;
+        });
       } else {
-        await recordInteraction(prayerId, 'saved');
-        setSavedPrayers(prev => new Set(prev).add(prayerId));
+        await recordInteraction(prayerId, "saved");
+        setSavedPrayers((prev) => new Set(prev).add(prayerId));
       }
     } catch (error) {
-      console.error('Error toggling save:', error);
+      console.error("Error toggling save:", error);
     }
   };
 
-  const goNext = (action: 'prayed' | 'skipped' = 'skipped') => {
+  const goNext = (action: "prayed" | "skipped" = "skipped") => {
     if (current) recordInteraction(current.id, action);
-    setHistory(prev => [...prev, index]);
-    setIndex(prev => Math.min(prev + 1, cards.length));
+    setHistory((prev) => [...prev, index]);
+    setIndex((prev) => Math.min(prev + 1, cards.length));
   };
 
   const goBack = () => {
     if (history.length > 0) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setIndex(history[history.length - 1]);
-      setHistory(prev => prev.slice(0, -1));
+      setHistory((prev) => prev.slice(0, -1));
     }
+  };
+
+  const handlePrayed = () => {
+    // Toast for the basic "I Prayed" action
+    prayToast.value = 0;
+    prayToast.value = withTiming(1, { duration: 220 });
+    setTimeout(() => {
+      prayToast.value = withTiming(0, { duration: 350 });
+    }, 900);
+
+    goNext("prayed");
   };
 
   const chooseReaction = async (key: string) => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     if (current) await recordInteraction(current.id, key);
+
+    // Encouragement toast animation
+    reactionToast.value = 0;
+    reactionToast.value = withTiming(1, { duration: 220 });
+    setTimeout(() => {
+      reactionToast.value = withTiming(0, { duration: 350 });
+    }, 900);
+
+    // Soft golden glow over the screen for a moment
+    reactionGlow.value = 0;
+    reactionGlow.value = withTiming(0.45, { duration: 160 }, () => {
+      reactionGlow.value = withTiming(0, { duration: 320 });
+    });
+
     setReactionOpen(false);
-    goNext('prayed');
+    goNext("prayed");
   };
 
   return (
     <GestureHandlerRootView style={styles.container}>
-      <LinearGradient colors={["#0D0D0F", "#1A1A1C", "#0D0D0F"]} locations={[0, 0.5, 1]} style={StyleSheet.absoluteFillObject} />
+      <LinearGradient
+        colors={["#0D0D0F", "#1A1A1C", "#0D0D0F"]}
+        locations={[0, 0.5, 1]}
+        style={StyleSheet.absoluteFillObject}
+      />
       <BackgroundOrb color="#C4A574" size={320} top={-80} left={-120} opacity={0.12} />
       <BackgroundOrb color="#A5B4A5" size={280} top={height * 0.35} left={width - 60} opacity={0.08} />
       <BackgroundOrb color="#B4A5C4" size={220} top={height * 0.7} left={-70} opacity={0.1} />
+
+      {/* Encouragement glow overlay */}
+      <Animated.View pointerEvents="none" style={[styles.reactionGlowOverlay, reactionGlowStyle]} />
 
       <Animated.View style={[styles.header, { paddingTop: insets.top + 8 }, headerAnimatedStyle]}>
         <View style={styles.headerLeft}>
@@ -587,36 +729,95 @@ export default function PrayScreen() {
 
       <View style={styles.content}>
         {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <View style={styles.loadingSpinner}>
-              <ActivityIndicator size="large" color="#C4A574" />
+          <View style={styles.centerWrapper}>
+            <View style={styles.loadingContainer}>
+              <View style={styles.loadingSpinner}>
+                <ActivityIndicator size="large" color="#C4A574" />
+              </View>
+              <Text style={styles.loadingText}>Loading prayers...</Text>
+              <Text style={styles.loadingSubtext}>Preparing hearts to connect</Text>
             </View>
-            <Text style={styles.loadingText}>Loading prayers...</Text>
-            <Text style={styles.loadingSubtext}>Preparing hearts to connect</Text>
           </View>
         ) : !current ? (
-          <EmptyState onRestart={fetchPrayers} />
+          <View style={styles.centerWrapper}>
+            <EmptyState onRestart={fetchPrayers} />
+          </View>
         ) : (
-          <SwipeablePrayerCard
-            key={current.id}
-            item={current}
-            onPray={() => goNext('prayed')}
-            onSkip={() => goNext('skipped')}
-            onReact={() => setReactionOpen(true)}
-            onSave={() => toggleSave(current.id)}
-            isSaved={savedPrayers.has(current.id)}
-          />
+          <View style={styles.cardWithToasts}>
+            <View style={styles.toastContainer}>
+              {/* Encouragement toast (above card, same position) */}
+              <Animated.View
+                pointerEvents="none"
+                style={[styles.toastWrapper, reactionToastStyle]}
+              >
+                <LinearGradient
+                  colors={["rgba(196,165,116,0.25)", "rgba(26,26,28,0.98)"]}
+                  style={styles.reactionToastInner}
+                >
+                  <View style={styles.reactionToastIcon}>
+                    <Feather name="heart" size={16} color="#C4A574" />
+                  </View>
+                  <View>
+                    <Text style={styles.reactionToastTitle}>Encouragement sent</Text>
+                    <Text style={styles.reactionToastSubtitle}>They’ll see your prayer reaction</Text>
+                  </View>
+                </LinearGradient>
+              </Animated.View>
+
+              {/* Basic "I Prayed" toast (same position above card) */}
+              <Animated.View
+                pointerEvents="none"
+                style={[styles.toastWrapper, prayToastStyle]}
+              >
+                <LinearGradient
+                  colors={["rgba(129,199,132,0.25)", "rgba(26,26,28,0.98)"]}
+                  style={styles.reactionToastInner}
+                >
+                  <View style={styles.reactionToastIcon}>
+                    <Feather name="check-circle" size={16} color="#81C784" />
+                  </View>
+                  <View>
+                    <Text style={styles.reactionToastTitle}>Marked as prayed</Text>
+                    <Text style={styles.reactionToastSubtitle}>
+                      Thank you for lifting this up in prayer
+                    </Text>
+                  </View>
+                </LinearGradient>
+              </Animated.View>
+            </View>
+
+            <SwipeablePrayerCard
+              key={current.id}
+              item={current}
+              onPray={handlePrayed}
+              onSkip={() => goNext("skipped")}
+              onReact={() => setReactionOpen(true)}
+              onSave={() => toggleSave(current.id)}
+              isSaved={savedPrayers.has(current.id)}
+            />
+          </View>
         )}
       </View>
 
-      <Animated.View style={[styles.anonymousBadge, { paddingBottom: insets.bottom + 8 }, headerAnimatedStyle]}>
+      <Animated.View
+        style={[
+          styles.anonymousBadge,
+          { paddingBottom: insets.bottom + 8 },
+          headerAnimatedStyle,
+        ]}
+      >
         <View style={styles.anonymousBadgeInner}>
           <Feather name="shield" size={12} color="rgba(196, 165, 116, 0.7)" />
           <Text style={styles.anonymousBadgeText}>100% Anonymous & Private</Text>
         </View>
       </Animated.View>
 
-      <Modal visible={reactionOpen} transparent animationType="fade" onRequestClose={() => setReactionOpen(false)}>
+      <Modal
+        visible={reactionOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setReactionOpen(false)}
+      >
         <Pressable style={styles.modalBackdrop} onPress={() => setReactionOpen(false)}>
           <Pressable style={styles.modalContent} onPress={() => {}}>
             <View style={styles.modalHandle} />
@@ -629,7 +830,12 @@ export default function PrayScreen() {
             </View>
             <View style={styles.reactionsGrid}>
               {PRESET_REACTIONS.map((r) => (
-                <TouchableOpacity key={r.key} onPress={() => chooseReaction(r.key)} style={styles.reactionButton} activeOpacity={0.7}>
+                <TouchableOpacity
+                  key={r.key}
+                  onPress={() => chooseReaction(r.key)}
+                  style={styles.reactionButton}
+                  activeOpacity={0.7}
+                >
                   <View style={[styles.reactionIconContainer, { backgroundColor: r.color + "20" }]}>
                     <Feather name={r.icon as any} size={22} color={r.color} />
                   </View>
@@ -637,7 +843,11 @@ export default function PrayScreen() {
                 </TouchableOpacity>
               ))}
             </View>
-            <TouchableOpacity onPress={() => setReactionOpen(false)} style={styles.modalCloseButton} activeOpacity={0.8}>
+            <TouchableOpacity
+              onPress={() => setReactionOpen(false)}
+              style={styles.modalCloseButton}
+              activeOpacity={0.8}
+            >
               <Text style={styles.modalCloseText}>Maybe Later</Text>
             </TouchableOpacity>
           </Pressable>
@@ -650,89 +860,474 @@ export default function PrayScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#0D0D0F" },
   orb: { position: "absolute", pointerEvents: "none" },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", paddingHorizontal: 20, paddingBottom: 6 },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    paddingHorizontal: 20,
+    paddingBottom: 6,
+  },
   headerLeft: {},
   headerTitleRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   headerTitle: { fontSize: 28, fontWeight: "700", color: "#FFFFFF", letterSpacing: -0.5 },
-  liveIndicator: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "rgba(129, 199, 132, 0.15)", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 },
+  liveIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "rgba(129, 199, 132, 0.15)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
   liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#81C784" },
   liveText: { fontSize: 11, fontWeight: "600", color: "#81C784" },
-  headerSubtitle: { fontSize: 14, color: "rgba(255,255,255,0.4)", marginTop: 4, fontWeight: "500" },
+  headerSubtitle: {
+    fontSize: 14,
+    color: "rgba(255,255,255,0.4)",
+    marginTop: 4,
+    fontWeight: "500",
+  },
   headerRight: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 4 },
-  counterPill: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(255,255,255,0.06)", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)" },
-  counterText: { color: "rgba(255,255,255,0.6)", fontSize: 13, fontWeight: "600", fontVariant: ["tabular-nums"] },
-  backButton: { width: 36, height: 36, borderRadius: 18, backgroundColor: "rgba(255,255,255,0.06)", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.08)" },
+  counterPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  counterText: {
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 13,
+    fontWeight: "600",
+    fontVariant: ["tabular-nums"],
+  },
+  backButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
   progressContainer: { paddingHorizontal: 20, paddingVertical: 8 },
-  progressBar: { height: 3, backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 2, overflow: "hidden" },
+  progressBar: {
+    height: 3,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderRadius: 2,
+    overflow: "hidden",
+  },
   progressFill: { height: "100%", backgroundColor: "#C4A574", borderRadius: 2 },
-  swipeInstructions: { flexDirection: "row", justifyContent: "center", alignItems: "center", paddingHorizontal: 32, paddingVertical: 6, gap: 20 },
+  swipeInstructions: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 32,
+    paddingVertical: 6,
+    gap: 20,
+  },
   instructionItem: { flexDirection: "row", alignItems: "center", gap: 4 },
   instructionText: { fontSize: 12, color: "rgba(255,255,255,0.25)", fontWeight: "600" },
   instructionDivider: { width: 1, height: 12, backgroundColor: "rgba(255,255,255,0.1)" },
-  content: { flex: 1, paddingHorizontal: 16, paddingBottom: 24, justifyContent: "center" },
+  content: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 72, // ensures space above the anonymous badge
+    justifyContent: "flex-start",
+  },
+  centerWrapper: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  cardWithToasts: {
+    width: "100%",
+    marginTop: 8,
+  },
+  toastContainer: {
+    position: "relative",
+    height: 40,
+    marginBottom: 12,
+    justifyContent: "flex-end",
+  },
+  toastWrapper: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+  },
   loadingContainer: { alignItems: "center", justifyContent: "center", gap: 12 },
-  loadingSpinner: { width: 64, height: 64, borderRadius: 32, backgroundColor: "rgba(196, 165, 116, 0.1)", alignItems: "center", justifyContent: "center", marginBottom: 8 },
+  loadingSpinner: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "rgba(196, 165, 116, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
   loadingText: { color: "rgba(255,255,255,0.7)", fontSize: 16, fontWeight: "600" },
   loadingSubtext: { color: "rgba(255,255,255,0.4)", fontSize: 13 },
   card: { width: "100%" },
-  cardInner: { backgroundColor: "rgba(26, 26, 28, 0.98)", borderRadius: 24, borderWidth: 1, borderColor: "rgba(255,255,255,0.1)", overflow: "hidden" },
-  cardTopGradient: { position: "absolute", top: 0, left: 0, right: 0, height: 120, borderTopLeftRadius: 24, borderTopRightRadius: 24 },
-  cardTopBar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingTop: 20, paddingBottom: 12 },
-  categoryBadge: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 },
+  cardInner: {
+    backgroundColor: "rgba(26, 26, 28, 0.98)",
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    overflow: "hidden",
+  },
+  cardTopGradient: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 120,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+  },
+  cardTopBar: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 12,
+  },
+  categoryBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
   categoryBadgeText: { fontSize: 12, fontWeight: "600" },
   cardTopBarRight: { flexDirection: "row", alignItems: "center", gap: 10 },
   timeBadge: { flexDirection: "row", alignItems: "center", gap: 4 },
   timeText: { fontSize: 12, color: "rgba(255,255,255,0.4)", fontWeight: "500" },
-  bookmarkButton: { width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.06)", borderWidth: 1, borderColor: "rgba(255,255,255,0.1)", alignItems: "center", justifyContent: "center" },
-  bookmarkButtonActive: { backgroundColor: "rgba(196, 165, 116, 0.15)", borderColor: "rgba(196, 165, 116, 0.3)" },
+  bookmarkButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bookmarkButtonActive: {
+    backgroundColor: "rgba(196, 165, 116, 0.15)",
+    borderColor: "rgba(196, 165, 116, 0.3)",
+  },
   swipeIndicator: { position: "absolute", top: 20, zIndex: 10 },
-  swipeIndicatorInner: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, backgroundColor: "rgba(196, 165, 116, 0.2)", borderWidth: 1.5, borderColor: "#C4A574" },
-  skipIndicatorInner: { backgroundColor: "rgba(255,255,255,0.1)", borderColor: "rgba(255,255,255,0.4)" },
+  swipeIndicatorInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: "rgba(196, 165, 116, 0.2)",
+    borderWidth: 1.5,
+    borderColor: "#C4A574",
+  },
+  skipIndicatorInner: {
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderColor: "rgba(255,255,255,0.4)",
+  },
   prayIndicator: { right: 70 },
   skipIndicator: { left: 20 },
-  swipeIndicatorText: { fontSize: 10, fontWeight: "800", color: "#C4A574", letterSpacing: 1 },
-  anonymousHeader: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, marginBottom: 12 },
+  swipeIndicatorText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#C4A574",
+    letterSpacing: 1,
+  },
+  anonymousHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
   avatarContainer: { marginRight: 12 },
-  avatar: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   anonymousInfo: {},
   anonymousName: { color: "#FFFFFF", fontSize: 15, fontWeight: "600", marginBottom: 2 },
-  anonymousSubtext: { color: "rgba(255,255,255,0.4)", fontSize: 12, fontWeight: "500" },
+  anonymousSubtext: {
+    color: "rgba(255,255,255,0.4)",
+    fontSize: 12,
+    fontWeight: "500",
+  },
   contentArea: { paddingHorizontal: 20, minHeight: 80, maxHeight: 180 },
   scrollView: { maxHeight: 160 },
   scrollContent: { paddingBottom: 8 },
-  scrollIndicator: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, paddingTop: 8 },
+  scrollIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    paddingTop: 8,
+  },
   scrollIndicatorText: { fontSize: 11, color: "rgba(255,255,255,0.3)" },
-  cardTitle: { color: "#FFFFFF", fontSize: 20, fontWeight: "700", letterSpacing: -0.3, marginBottom: 8, lineHeight: 26 },
+  cardTitle: {
+    color: "#FFFFFF",
+    fontSize: 20,
+    fontWeight: "700",
+    letterSpacing: -0.3,
+    marginBottom: 8,
+    lineHeight: 26,
+  },
   cardBody: { color: "rgba(255,255,255,0.7)", fontSize: 15, lineHeight: 22, fontWeight: "400" },
-  prayerCountContainer: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.06)" },
+  prayerCountContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.06)",
+  },
   prayerCountDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#C4A574" },
-  prayerCountText: { color: "rgba(255,255,255,0.5)", fontSize: 12, fontWeight: "500" },
-  cardActions: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 20, paddingTop: 20, paddingBottom: 24, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.06)", marginTop: 16 },
-  actionButton: { width: 50, height: 50, borderRadius: 25, backgroundColor: "rgba(255,255,255,0.06)", borderWidth: 1, borderColor: "rgba(255,255,255,0.1)", alignItems: "center", justifyContent: "center" },
-  actionButtonCenter: { width: 50, height: 50, borderRadius: 25, backgroundColor: "rgba(255,255,255,0.06)", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.1)" },
-  actionButtonPrimary: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 15, borderRadius: 25 },
+  prayerCountText: {
+    color: "rgba(255,255,255,0.5)",
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  cardActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 24,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.06)",
+    marginTop: 16,
+  },
+  actionButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  actionButtonCenter: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  actionButtonPrimary: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 15,
+    borderRadius: 25,
+  },
   actionButtonPrimaryText: { color: "#1A1A1C", fontSize: 15, fontWeight: "700" },
   emptyState: { alignItems: "center", paddingHorizontal: 40 },
   emptyIconContainer: { marginBottom: 20 },
-  emptyIconGradient: { width: 88, height: 88, borderRadius: 44, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(196, 165, 116, 0.3)" },
+  emptyIconGradient: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(196, 165, 116, 0.3)",
+  },
   emptyTitle: { color: "#FFFFFF", fontSize: 24, fontWeight: "700", marginBottom: 12 },
-  emptySubtitle: { color: "rgba(255,255,255,0.5)", fontSize: 15, textAlign: "center", lineHeight: 23, marginBottom: 28 },
-  emptyButton: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 14, paddingHorizontal: 24, borderRadius: 20, backgroundColor: "rgba(196, 165, 116, 0.15)", borderWidth: 1, borderColor: "rgba(196, 165, 116, 0.3)" },
+  emptySubtitle: {
+    color: "rgba(255,255,255,0.5)",
+    fontSize: 15,
+    textAlign: "center",
+    lineHeight: 23,
+    marginBottom: 28,
+  },
+  emptyButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 20,
+    backgroundColor: "rgba(196, 165, 116, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(196, 165, 116, 0.3)",
+  },
   emptyButtonText: { color: "#C4A574", fontSize: 15, fontWeight: "600" },
   anonymousBadge: { alignItems: "center", paddingHorizontal: 40 },
-  anonymousBadgeInner: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 8, paddingHorizontal: 16, backgroundColor: "rgba(196, 165, 116, 0.08)", borderRadius: 20, borderWidth: 1, borderColor: "rgba(196, 165, 116, 0.15)" },
-  anonymousBadgeText: { color: "rgba(196, 165, 116, 0.8)", fontSize: 12, fontWeight: "600" },
+  anonymousBadgeInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: "rgba(196, 165, 116, 0.08)",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(196, 165, 116, 0.15)",
+  },
+  anonymousBadgeText: {
+    color: "rgba(196, 165, 116, 0.8)",
+    fontSize: 12,
+    fontWeight: "600",
+  },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", justifyContent: "flex-end" },
-  modalContent: { backgroundColor: "#1A1A1C", borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 40, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", borderBottomWidth: 0 },
-  modalHandle: { width: 40, height: 4, backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 2, alignSelf: "center", marginBottom: 24 },
+  modalContent: {
+    backgroundColor: "#1A1A1C",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 24,
+    paddingBottom: 40,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    borderBottomWidth: 0,
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    borderRadius: 2,
+    alignSelf: "center",
+    marginBottom: 24,
+  },
   modalHeader: { alignItems: "center", marginBottom: 24 },
-  modalIconContainer: { width: 56, height: 56, borderRadius: 28, backgroundColor: "rgba(196, 165, 116, 0.15)", alignItems: "center", justifyContent: "center", marginBottom: 16 },
+  modalIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "rgba(196, 165, 116, 0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
   modalTitle: { color: "#FFFFFF", fontSize: 22, fontWeight: "700", textAlign: "center", marginBottom: 6 },
   modalSubtitle: { color: "rgba(255,255,255,0.4)", fontSize: 14, textAlign: "center" },
-  reactionsGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", gap: 10, marginBottom: 20 },
-  reactionButton: { width: (width - 48 - 20) / 3, paddingVertical: 14, backgroundColor: "rgba(255,255,255,0.04)", borderRadius: 16, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", gap: 8 },
-  reactionIconContainer: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  reactionsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    gap: 10,
+    marginBottom: 20,
+  },
+  reactionButton: {
+    width: (width - 48 - 20) / 3,
+    paddingVertical: 14,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    gap: 8,
+  },
+  reactionIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   reactionLabel: { color: "rgba(255,255,255,0.8)", fontSize: 12, fontWeight: "600" },
-  modalCloseButton: { alignItems: "center", paddingVertical: 16, backgroundColor: "rgba(255,255,255,0.06)", borderRadius: 16, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)" },
+  modalCloseButton: {
+    alignItems: "center",
+    paddingVertical: 16,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
   modalCloseText: { color: "rgba(255,255,255,0.5)", fontSize: 15, fontWeight: "600" },
+
+  // Pray flash overlay styles
+  prayFlashOverlay: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    justifyContent: "flex-start",
+    alignItems: "center",
+    paddingTop: 70,
+    zIndex: 5,
+  },
+  prayFlashGradient: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  prayFlashInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  prayFlashText: {
+    color: "#1A1A1C",
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+  },
+
+  // Encouragement glow overlay
+  reactionGlowOverlay: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "rgba(196,165,116,0.25)",
+  },
+
+  // Toast styles
+  reactionToastInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(196,165,116,0.35)",
+    backgroundColor: "rgba(26,26,28,0.98)",
+  },
+  reactionToastIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "rgba(196,165,116,0.18)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  reactionToastTitle: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  reactionToastSubtitle: {
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 11,
+  },
 });
