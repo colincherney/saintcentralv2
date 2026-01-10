@@ -191,6 +191,11 @@ export default function ProfileScreen() {
     router.push('/(tabs)/edit-profile' as any);
   };
 
+  const handleBackPress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push('/(tabs)/home');
+  };
+
   // Get display name from email
   const getDisplayName = () => {
     if (!userEmail) return 'User';
@@ -215,6 +220,17 @@ export default function ProfileScreen() {
       {/* Decorative orbs */}
       <BackgroundOrb color="#B4A5C4" size={250} top={-50} left={-80} opacity={0.12} />
       <BackgroundOrb color="#C4A574" size={200} top={height * 0.6} left={width - 60} opacity={0.1} />
+
+      {/* Back Button */}
+      <View style={[styles.backButtonContainer, { top: insets.top + 8 }]}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={handleBackPress}
+          activeOpacity={0.7}
+        >
+          <Feather name="arrow-left" size={20} color="rgba(255,255,255,0.8)" />
+        </TouchableOpacity>
+      </View>
 
       <Animated.ScrollView
         style={styles.scrollView}
@@ -373,6 +389,23 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 24,
+  },
+
+  // Back Button
+  backButtonContainer: {
+    position: 'absolute',
+    left: 20,
+    zIndex: 10,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // Profile Header
