@@ -1,3 +1,4 @@
+// app/(tabs)/_layout.tsx
 import { Tabs } from 'expo-router';
 import React from 'react';
 import { View, StyleSheet, Pressable } from 'react-native';
@@ -15,7 +16,10 @@ function HapticTab(props: any) {
       }}
       style={({ pressed }) => [
         props.style,
-        { opacity: pressed ? 0.7 : 1, transform: [{ scale: pressed ? 0.95 : 1 }] },
+        {
+          opacity: pressed ? 0.7 : 1,
+          transform: [{ scale: pressed ? 0.95 : 1 }],
+        },
       ]}
     />
   );
@@ -29,14 +33,11 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
         tabBarButton: HapticTab,
+        // 🔥 Hide the Expo bottom tab bar completely
         tabBarStyle: {
-          backgroundColor: '#0D0D0F',
-          borderTopWidth: 1,
-          borderTopColor: 'rgba(255,255,255,0.06)',
-          height: 60 + insets.bottom,
-          paddingTop: 8,
-          paddingBottom: insets.bottom + 8,
+          display: 'none',
         },
+        // These won’t really matter visually anymore, but safe to keep
         tabBarActiveTintColor: '#C4A574',
         tabBarInactiveTintColor: 'rgba(255,255,255,0.35)',
         tabBarLabelStyle: {
@@ -65,8 +66,17 @@ export default function TabLayout() {
         options={{
           title: 'Pray',
           tabBarIcon: ({ color, focused }) => (
-            <View style={[styles.prayIconContainer, focused && styles.prayIconActive]}>
-              <Feather name="sunrise" size={22} color={focused ? '#0D0D0F' : color} />
+            <View
+              style={[
+                styles.prayIconContainer,
+                focused && styles.prayIconActive,
+              ]}
+            >
+              <Feather
+                name="sunrise"
+                size={22}
+                color={focused ? '#0D0D0F' : color}
+              />
             </View>
           ),
         }}
@@ -82,6 +92,8 @@ export default function TabLayout() {
           ),
         }}
       />
+
+      {/* Hidden routes still part of tab router, but not directly reachable by tab bar */}
       <Tabs.Screen
         name="saved-prayers"
         options={{
@@ -118,7 +130,7 @@ export default function TabLayout() {
           href: null,
         }}
       />
-       <Tabs.Screen
+      <Tabs.Screen
         name="privacy"
         options={{
           href: null,
