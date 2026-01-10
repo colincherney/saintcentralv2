@@ -17,6 +17,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { supabase } from '@/supabaseConfig';
@@ -53,6 +54,7 @@ export default function HomeScreen() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const insets = useSafeAreaInsets();
+  const router = useRouter();
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
@@ -75,6 +77,11 @@ export default function HomeScreen() {
 
   const isFormValid =
     title.trim().length > 0 && prayer.trim().length > 0 && selectedCategory;
+
+  const handleBackPress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push('/(tabs)/home');
+  };
 
   const handleSubmit = async () => {
     Keyboard.dismiss();
@@ -162,6 +169,19 @@ export default function HomeScreen() {
         opacity={0.1}
       />
 
+      {/* ✅ Back Button Overlay (stays fixed while scrolling) */}
+      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+        <View style={[styles.backButtonContainer, { top: insets.top + 8 }]}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={handleBackPress}
+            activeOpacity={0.7}
+          >
+            <Feather name="arrow-left" size={20} color="rgba(255,255,255,0.8)" />
+          </TouchableOpacity>
+        </View>
+      </View>
+
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
@@ -170,7 +190,7 @@ export default function HomeScreen() {
           style={styles.scrollView}
           contentContainerStyle={[
             styles.scrollContent,
-            { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 100 },
+            { paddingTop: insets.top + 64, paddingBottom: insets.bottom + 100 },
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
@@ -321,9 +341,7 @@ export default function HomeScreen() {
                       name="send"
                       size={18}
                       color={
-                        isFormValid
-                          ? '#0D0D0F'
-                          : 'rgba(255,255,255,0.3)'
+                        isFormValid ? '#0D0D0F' : 'rgba(255,255,255,0.3)'
                       }
                     />
                     <Text
@@ -364,8 +382,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
 
+  // Back Button (fixed overlay)
+  backButtonContainer: {
+    position: 'absolute',
+    left: 20,
+    zIndex: 9999,
+    elevation: 9999,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+
   header: {
     marginBottom: 32,
+    marginTop: 0,
   },
   headerTitle: {
     fontSize: 32,
