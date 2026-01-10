@@ -36,30 +36,30 @@ interface Slide {
 const slides: Slide[] = [
   {
     id: '1',
-    title: 'Saint',
-    subtitle: 'Central',
+    title: 'Pray',
+    subtitle: 'Together',
     image: require('../assets/images/1.png'),
-    gradient: ['#FAF8F5', '#F0EBE3'],
-    accentColor: '#9B8B7A',
+    gradient: ['#F6F9F5', '#E5EDE3'],
+    accentColor: '#6B8B8B',
     backgroundPattern: 'dove',
   },
   {
     id: '2',
-    title: 'Pray',
-    subtitle: 'Together',
+    title: 'Saint',
+    subtitle: 'Central',
     image: require('../assets/images/2.png'),
-    gradient: ['#F6F9F5', '#E5EDE3'],
-    accentColor: '#6B8B6B',
-    backgroundPattern: 'cross',
+    gradient: ['#F5F7FA', '#E3E8F2'],
+    accentColor: '#8B6B4A',
+    backgroundPattern: 'rays',
   },
   {
     id: '3',
     title: 'Stay',
     subtitle: 'Anonymous',
     image: require('../assets/images/3.png'),
-    gradient: ['#F5F7FA', '#E3E8EE'],
-    accentColor: '#6B7B8B',
-    backgroundPattern: 'rays',
+    gradient: ['#FAF8F5', '#F0EBE3'],
+    accentColor: '#9B8B7A',
+    backgroundPattern: 'cross',
   },
 ];
 
@@ -167,7 +167,7 @@ const OnboardingScreenEnhanced: React.FC = () => {
 
   const viewConfig = useRef({ viewAreaCoveragePercentThreshold: 50 }).current;
 
-  const currentSlide = slides[currentIndex];
+  const currentSlide = slides[currentIndex] || slides[0];
 
   const getBackgroundPattern = (pattern: string, color: string) => {
     switch (pattern) {
