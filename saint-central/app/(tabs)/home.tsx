@@ -33,10 +33,38 @@ import Animated, {
 } from "react-native-reanimated";
 import { supabase } from "@/supabaseConfig";
 import { useRouter } from "expo-router";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width, height } = Dimensions.get("window");
 
 const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
+
+// Background images B1-B23
+const BACKGROUND_IMAGES = [
+  require("../../assets/images/B1.webp"),
+  require("../../assets/images/B2.webp"),
+  require("../../assets/images/B3.webp"),
+  require("../../assets/images/B4.webp"),
+  require("../../assets/images/B5.webp"),
+  require("../../assets/images/B6.webp"),
+  require("../../assets/images/B7.webp"),
+  require("../../assets/images/B8.webp"),
+  require("../../assets/images/B9.webp"),
+  require("../../assets/images/B10.webp"),
+  require("../../assets/images/B11.webp"),
+  require("../../assets/images/B12.webp"),
+  require("../../assets/images/B13.webp"),
+  require("../../assets/images/B14.webp"),
+  require("../../assets/images/B15.webp"),
+  require("../../assets/images/B16.webp"),
+  require("../../assets/images/B17.webp"),
+  require("../../assets/images/B18.webp"),
+  require("../../assets/images/B19.webp"),
+  require("../../assets/images/B20.webp"),
+  require("../../assets/images/B21.webp"),
+  require("../../assets/images/B22.webp"),
+  require("../../assets/images/B23.webp"),
+];
 
 type PrayerRequest = {
   id: string;
@@ -104,6 +132,7 @@ const PrayerScreen = () => {
   const [reactionsVisible, setReactionsVisible] = useState(false);
   const [bottomOpen, setBottomOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [backgroundImage, setBackgroundImage] = useState(BACKGROUND_IMAGES[0]);
   
   // Backend state
   const [currentPrayer, setCurrentPrayer] = useState<PrayerRequest | null>(null);
@@ -116,6 +145,15 @@ const PrayerScreen = () => {
   
   // Track which prayers have been shown this session
   const seenPrayerIdsRef = useRef<Set<string>>(new Set());
+
+  // Select random background on mount
+  useEffect(() => {
+    const selectRandomBackground = async () => {
+      const randomIndex = Math.floor(Math.random() * BACKGROUND_IMAGES.length);
+      setBackgroundImage(BACKGROUND_IMAGES[randomIndex]);
+    };
+    selectRandomBackground();
+  }, []);
 
   // Reanimated values for the liquid reactions sheet
   const sheetAnim = useSharedValue(0);
@@ -566,7 +604,7 @@ const PrayerScreen = () => {
       <View style={styles.root}>
         <StatusBar barStyle="light-content" />
         <ImageBackground
-          source={require("../../assets/images/PrayerScreen.jpg")}
+          source={backgroundImage}
           style={styles.image}
           resizeMode="cover"
         >
@@ -592,7 +630,7 @@ const PrayerScreen = () => {
       <View style={styles.root}>
         <StatusBar barStyle="light-content" />
         <ImageBackground
-          source={require("../../assets/images/PrayerScreen.jpg")}
+          source={backgroundImage}
           style={styles.image}
           resizeMode="cover"
         >
@@ -729,7 +767,7 @@ const PrayerScreen = () => {
       <StatusBar barStyle="light-content" />
 
       <ImageBackground
-        source={require("../../assets/images/PrayerScreen.jpg")}
+        source={backgroundImage}
         style={styles.image}
         resizeMode="cover"
       >
