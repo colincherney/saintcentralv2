@@ -393,13 +393,13 @@ const PrayerScreen = () => {
 
   const bottomHeight = bottomAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [56, 200],
+    outputRange: [56, 180],
   });
 
   const cardsOpacity = bottomAnim;
   const cardsTranslateY = bottomAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [12, 0],
+    outputRange: [0, -12],
   });
 
   // Reanimated styles for the "liquid" reactions sheet
@@ -668,20 +668,7 @@ const PrayerScreen = () => {
                 },
               ]}
             >
-              {/* TOGGLE ARROW */}
-              <View style={styles.bottomToggleRow}>
-                <TouchableOpacity activeOpacity={0.9} onPress={toggleBottomDrawer}>
-                  <Animated.View style={[styles.bottomTogglePill, arrowStyle]}>
-                    <Feather
-                      name={bottomOpen ? "chevron-down" : "chevron-up"}
-                      size={18}
-                      color="rgba(255,255,255,0.9)"
-                    />
-                  </Animated.View>
-                </TouchableOpacity>
-              </View>
-
-              {/* THREE BOXES */}
+              {/* CARDS AT TOP */}
               <RNAnimated.View
                 style={[
                   styles.bottomCardsWrapper,
@@ -714,6 +701,19 @@ const PrayerScreen = () => {
                   />
                 </ScrollView>
               </RNAnimated.View>
+
+              {/* TOGGLE ARROW AT BOTTOM */}
+              <View style={styles.bottomToggleRow}>
+                <TouchableOpacity activeOpacity={0.9} onPress={toggleBottomDrawer}>
+                  <Animated.View style={[styles.bottomTogglePill, arrowStyle]}>
+                    <Feather
+                      name={bottomOpen ? "chevron-down" : "chevron-up"}
+                      size={18}
+                      color="rgba(255,255,255,0.9)"
+                    />
+                  </Animated.View>
+                </TouchableOpacity>
+              </View>
             </RNAnimated.View>
           </View>
         </ImageBackground>
@@ -805,11 +805,11 @@ const PrayerScreen = () => {
                 style={[styles.toastWrapper, prayToastStyle]}
               >
                 <LinearGradient
-                  colors={["rgba(129,199,132,0.25)", "rgba(26,26,28,0.98)"]}
+                  colors={["rgba(156,163,175,0.25)", "rgba(26,26,28,0.98)"]}
                   style={styles.reactionToastInner}
                 >
                   <View style={styles.reactionToastIcon}>
-                    <Feather name="check-circle" size={16} color="#81C784" />
+                    <Feather name="check-circle" size={16} color="#9CA3AF" />
                   </View>
                   <View>
                     <Text style={styles.reactionToastTitle}>Marked as prayed</Text>
@@ -905,20 +905,7 @@ const PrayerScreen = () => {
               },
             ]}
           >
-            {/* TOGGLE ARROW */}
-            <View style={styles.bottomToggleRow}>
-              <TouchableOpacity activeOpacity={0.9} onPress={toggleBottomDrawer}>
-                <Animated.View style={[styles.bottomTogglePill, arrowStyle]}>
-                  <Feather
-                    name={bottomOpen ? "chevron-down" : "chevron-up"}
-                    size={18}
-                    color="rgba(255,255,255,0.9)"
-                  />
-                </Animated.View>
-              </TouchableOpacity>
-            </View>
-
-            {/* THREE BOXES */}
+            {/* CARDS AT TOP */}
             <RNAnimated.View
               style={[
                 styles.bottomCardsWrapper,
@@ -951,6 +938,19 @@ const PrayerScreen = () => {
                 />
               </ScrollView>
             </RNAnimated.View>
+
+            {/* TOGGLE ARROW AT BOTTOM */}
+            <View style={styles.bottomToggleRow}>
+              <TouchableOpacity activeOpacity={0.9} onPress={toggleBottomDrawer}>
+                <Animated.View style={[styles.bottomTogglePill, arrowStyle]}>
+                  <Feather
+                    name={bottomOpen ? "chevron-down" : "chevron-up"}
+                    size={18}
+                    color="rgba(255,255,255,0.9)"
+                  />
+                </Animated.View>
+              </TouchableOpacity>
+            </View>
           </RNAnimated.View>
         </View>
 
@@ -1255,16 +1255,18 @@ const styles = RNStyleSheet.create({
 
   centerContent: {
     flex: 1,
-    justifyContent: "flex-end",
+    justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 18,
-    paddingBottom: 12,
+    paddingBottom: 80,
+    marginTop: 90,
   },
 
   subtitleText: {
     color: "rgba(255,255,255,0.8)",
     fontSize: 13,
     textAlign: "center",
+    marginTop: 30,
     marginBottom: 18,
   },
 
@@ -1421,10 +1423,11 @@ const styles = RNStyleSheet.create({
   bottomDrawer: {
     width: "100%",
     paddingHorizontal: 18,
+    marginBottom: 30,
   },
   bottomToggleRow: {
     alignItems: "center",
-    marginBottom: 4,
+    marginTop: 4,
   },
 
   bottomTogglePill: {
