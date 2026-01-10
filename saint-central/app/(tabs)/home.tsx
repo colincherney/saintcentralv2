@@ -868,7 +868,7 @@ const PrayerScreen = () => {
               }}
               style={styles.glassCardWrapper}
             >
-              <BlurView intensity={45} tint="light" style={styles.glassBlur} />
+              <BlurView intensity={85} tint="light" style={styles.glassBlur} />
               <View style={styles.glassContent}>
                 <View style={styles.cardHeader}>
                   <Text style={styles.cardTime}>{timeAgo(currentPrayer.created_at)}</Text>
@@ -919,18 +919,24 @@ const PrayerScreen = () => {
                 onPress={handleMoreReactionsPress}
                 style={styles.moreButton}
               >
-                <Text style={styles.moreButtonText}>More reactions</Text>
-                <Feather
-                  name="droplet"
-                  size={16}
-                  color="rgba(255,255,255,0.7)"
-                />
+                <BlurView intensity={60} tint="dark" style={styles.moreButtonBlur} />
+                <View style={styles.moreButtonContent}>
+                  <Text style={styles.moreButtonText}>More reactions</Text>
+                  <Feather
+                    name="droplet"
+                    size={16}
+                    color="rgba(255,255,255,0.7)"
+                  />
+                </View>
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.helperText}>
-              Your response is always 100% anonymous.
-            </Text>
+            <View style={styles.helperTextContainer}>
+              <BlurView intensity={50} tint="dark" style={styles.helperTextBlur} />
+              <Text style={styles.helperText}>
+                Your response is always 100% anonymous.
+              </Text>
+            </View>
           </View>
 
           {/* BOTTOM DRAWER */}
@@ -1031,7 +1037,7 @@ const PrayerScreen = () => {
               <View style={styles.expandCardContainer}>
                 <View style={styles.glassCardWrapper}>
                   <BlurView
-                    intensity={65}
+                    intensity={85}
                     tint="light"
                     style={styles.glassBlur}
                   />
@@ -1088,20 +1094,26 @@ const PrayerScreen = () => {
                     onPress={handleMoreReactionsPress}
                     style={styles.moreButton}
                   >
-                    <Text style={styles.moreButtonText}>
-                      More reactions
-                    </Text>
-                    <Feather
-                      name="droplet"
-                      size={16}
-                      color="rgba(255,255,255,0.7)"
-                    />
+                    <BlurView intensity={60} tint="dark" style={styles.moreButtonBlur} />
+                    <View style={styles.moreButtonContent}>
+                      <Text style={styles.moreButtonText}>
+                        More reactions
+                      </Text>
+                      <Feather
+                        name="droplet"
+                        size={16}
+                        color="rgba(255,255,255,0.7)"
+                      />
+                    </View>
                   </TouchableOpacity>
                 </View>
 
-                <Text style={[styles.helperText, { marginBottom: 4 }]}>
-                  Your response is always 100% anonymous.
-                </Text>
+                <View style={[styles.helperTextContainer, { marginBottom: 4 }]}>
+                  <BlurView intensity={50} tint="dark" style={styles.helperTextBlur} />
+                  <Text style={styles.helperText}>
+                    Your response is always 100% anonymous.
+                  </Text>
+                </View>
               </View>
             </View>
           </View>
@@ -1358,8 +1370,8 @@ const styles = RNStyleSheet.create({
     marginBottom: 24,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-    backgroundColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(255,255,255,0.3)",
+    backgroundColor: "rgba(255,255,255,0.15)",
   },
   glassBlur: {
     ...RNStyleSheet.absoluteFillObject,
@@ -1440,8 +1452,16 @@ const styles = RNStyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
-    backgroundColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(255,255,255,0.3)",
+    backgroundColor: "rgba(255,255,255,0.12)",
+    overflow: "hidden",
+  },
+  moreButtonBlur: {
+    ...RNStyleSheet.absoluteFillObject,
+  },
+  moreButtonContent: {
+    flexDirection: "row",
+    alignItems: "center",
   },
   moreButtonText: {
     color: "#fff",
@@ -1450,11 +1470,23 @@ const styles = RNStyleSheet.create({
     marginRight: 6,
   },
 
+  helperTextContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 999,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
+    backgroundColor: "rgba(0,0,0,0.2)",
+    marginTop: 4,
+  },
+  helperTextBlur: {
+    ...RNStyleSheet.absoluteFillObject,
+  },
   helperText: {
-    color: "rgba(255,255,255,0.6)",
+    color: "rgba(255,255,255,0.8)",
     fontSize: 12,
     textAlign: "center",
-    marginTop: 4,
   },
 
   // Drawer
